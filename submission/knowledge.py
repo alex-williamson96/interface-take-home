@@ -91,11 +91,12 @@ def _qualifiers_fit(question: RateQuestion, fact: RateFact) -> bool:
 
 
 def _best_word_matches(question: RateQuestion, facts: list[RateFact]) -> list[RateFact]:
-    if not facts or not question.words:
+    if not facts:
         return facts
-    best = max(len(question.words & f.words) for f in facts)
-    if best == 0:
+    words_on_any_row = frozenset().union(*(f.words for f in facts))
+    if not question.product_words <= words_on_any_row:
         return []
+    best = max(len(question.words & f.words) for f in facts)
     return [f for f in facts if len(question.words & f.words) == best]
 
 

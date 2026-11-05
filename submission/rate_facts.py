@@ -40,7 +40,7 @@ MODEL_YEARS = re.compile(r"(20\d\d)\s*[-–—]\s*(\d{2,4})")
 SINGLE_MODEL_YEAR = re.compile(r"\b(20\d\d)\b")
 EARLIEST_MODEL_YEAR = 1900
 WORD = re.compile(r"[a-z0-9]+(?:'[a-z]+)?")
-CANONICAL_WORDS = {"intro": "introductory", "hsa": "health"}
+CANONICAL_WORDS = {"intro": "introductory", "hsa": "health", "cds": "cd"}
 
 FAMILY_PATTERNS = (
     ("money_market", re.compile(r"money market|investor[’']?s choice|\bachieve\b", re.I)),

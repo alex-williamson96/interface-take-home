@@ -297,6 +297,24 @@ class QuestionWording(unittest.TestCase):
         sheet = "Investor's Choice Money Market\n\n| Balance Tier | Annual Percentage Yield (APY) |\n| --- | --- |\n| $25,000+ | 0.35% |\n"
         self.assertFalse(system_with(sheet).answer("What is the Achieve money market APY?").confident)
 
+    def test_a_word_that_names_no_product_does_not_refuse(self):
+        system = system_with_two_dates()
+        plain = system.answer("What is the 10 month CD APY?").text
+        for reworded in (
+            "What is the 10 month CD APY for a member?",
+            "Could you share the 10 month certificate of deposit annual percentage yield?",
+        ):
+            self.assertEqual(system.answer(reworded).text, plain, reworded)
+
+    def test_a_capitalized_name_after_the_product_refuses(self):
+        self.assertFalse(system_with_two_dates().answer("What is the savings rate at Chase?").confident)
+
+    def test_a_vehicle_make_does_not_refuse(self):
+        self.assertTrue(system_with(AUTO_SHEET).answer("What is the 60 month auto rate for my Honda?").confident)
+
+    def test_a_question_about_how_rates_work_refuses(self):
+        self.assertFalse(system_with_two_dates().answer("Why did my CD rate go down?").confident)
+
 
 class HarnessLoading(unittest.TestCase):
     def test_solution_loads_the_way_the_harness_loads_it_without_a_sys_modules_entry(self):
