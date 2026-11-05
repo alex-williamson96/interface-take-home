@@ -61,7 +61,11 @@ WORDS_THAT_DO_NOT_SEARCH_TEXT = """
 
 LOCATOR_PATH = "/contact"
 HOURS_ASKED = re.compile(r"\bhours?\b", re.I)
+OPENING_TIME_ASKED = re.compile(r"\bwhen (?:does|do|is)\b.*\b(?:branch(?:es)?|lobby|drive-up)\b.*\bopen\b", re.I)
+CLOSING_TIME_ASKED = re.compile(r"\bwhen (?:does|do|is)\b.*\b(?:branch(?:es)?|lobby|drive-up)\b.*\bclose\b", re.I)
 A_BRANCH_ASKED_ABOUT = re.compile(r"\b(?:branch(?:es)?|locations?)\b", re.I)
+FIRST_OR_LAST_OF_A_KIND = re.compile(r"\b(?:first|last|oldest|newest|original)\s+[a-z]+", re.I)
+BYLINE = re.compile(r"Written by .*?\|\s*[A-Z][a-z]{2} \d{1,2}, \d{4} [\d:]+ [AP]M")
 DATE_ASKED = re.compile(r"\bwhen\b|\bwhat date\b|\bstill open\b", re.I)
 ADDRESS_ASKED = re.compile(r"\baddress\b", re.I)
 ROUTING_ASKED = re.compile(r"\brouting\b", re.I)
@@ -160,7 +164,8 @@ def _plain(block: str, keep_urls: bool) -> str:
         label, target = found.groups()
         return f"{label} ({target})" if keep_urls and _is_a_page_address(target) else label
 
-    return re.sub(r"\s+", " ", MARKUP.sub("", LINK.sub(link, IMAGE.sub("", block)))).strip()
+    plain = re.sub(r"\s+", " ", MARKUP.sub("", LINK.sub(link, IMAGE.sub("", block))))
+    return BYLINE.sub("", plain).strip()
 
 
 def split_into_blocks(markdown: str) -> list[str]:
@@ -270,7 +275,7 @@ class PassageIndex:
 
     def search(self, question: str) -> Optional[Found]:
         names = _names_in(question)
-        if HOURS_ASKED.search(question):
+        if _asks_when_a_branch_is_open(question, names):
             return self._hours(question)
         shape = _shape_asked_for(question)
         fewest_body_matches = 1 if shape else FEWEST_MATCHED_TERMS_WITHOUT_A_TITLE_MATCH
@@ -283,6 +288,9 @@ class PassageIndex:
         if COUNTED_THING.search(question):
             return self._most_stated_count(question, ranked, shape)
         if shape is DATE_OR_YEAR:
+            ranked = _stating_any_first_or_last_asked_about(question, ranked)
+            if not ranked:
+                return None
             if not names and A_BRANCH_ASKED_ABOUT.search(question):
                 return self._date_of_an_unnamed_branch(question, terms, ranked)
         best = _newest_among_the_tied(ranked)
@@ -390,6 +398,18 @@ def _schedule_of(passage: Passage) -> str:
 
 def _schedule_key(passage: Passage) -> str:
     return re.sub(r"[^a-z0-9:]", "", _schedule_of(passage).lower())
+
+
+def _asks_when_a_branch_is_open(question: str, names: set[str]) -> bool:
+    closing_time = not names and CLOSING_TIME_ASKED.search(question)
+    return bool(HOURS_ASKED.search(question) or OPENING_TIME_ASKED.search(question) or closing_time)
+
+
+def _stating_any_first_or_last_asked_about(
+    question: str, ranked: list[tuple[float, Passage]]
+) -> list[tuple[float, Passage]]:
+    asked = [" ".join(words_in(found)) for found in FIRST_OR_LAST_OF_A_KIND.findall(question)]
+    return [scored for scored in ranked if all(phrase in " ".join(words_in(scored[1].text)) for phrase in asked)]
 
 
 def _search_terms(question: str) -> set[str]:

@@ -198,6 +198,20 @@ class AnswersFromPageText(unittest.TestCase):
         self.assertIn("Galena branch closing", answer)
         self.assertIn("Asbury branch closing", answer)
 
+    def test_when_a_branch_opens_is_answered_with_its_hours(self):
+        system = system_with_pages((NEWS_URL + "galena", HOURS_ARTICLE))
+        for question in ("When does the branch open?", "When does the Galena branch open?"):
+            self.assertIn("8:30 a.m.-5 p.m.", system.answer(question).text, question)
+
+    def test_a_first_of_something_the_site_never_mentions_refuses(self):
+        page = article("June 1, 2026", "Dupaco will open the first floor of its new branch in 2022.")
+        self.assertFalse(system_with_pages((NEWS_URL + "a", page)).answer("When did Dupaco open its first branch?").confident)
+
+    def test_a_byline_date_is_not_the_answer_to_a_date_question(self):
+        page = "New branch office to open in Coralville\n\nWritten by [Emily](https://www.dupaco.com/a) | Oct 8, 2021 12:57:34 PM"
+        answer = system_with_pages((NEWS_URL + "a", page)).answer("When will the new branch office in Coralville open?")
+        self.assertFalse(answer.confident)
+
     def test_a_question_naming_nothing_can_answer_from_elsewhere_on_the_page_and_quotes_it(self):
         page = article(
             "June 1, 2026",
