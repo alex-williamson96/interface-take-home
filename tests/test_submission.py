@@ -208,6 +208,17 @@ class AnswersFromPageText(unittest.TestCase):
         page = article("June 1, 2026", "The Galena branch ribbon cutting gift drive was held June 1, 2025.")
         self.assertFalse(system_with_pages((NEWS_URL + "a", page)).answer("When is the Galena branch ribbon cutting dinner speech?").confident)
 
+    def test_a_past_event_the_page_title_names_is_dated_by_its_article(self):
+        page = article("June 1, 2026", "Dupaco has completed a renovation at its Galena branch.")
+        system = KnowledgeSystem()
+        system.ingest(Snapshot("s", "2026-09-28", [Page(NEWS_URL + "a", "Galena branch renovation", page, "2026-09-28")]))
+        self.assertIn("article dated June 1, 2026", system.answer("When did the Galena branch renovation finish?").text)
+        self.assertFalse(system.answer("When does the Galena branch renovation finish?").confident)
+
+    def test_a_date_sentence_about_something_else_on_the_page_does_not_answer_for_the_name(self):
+        page = article("June 1, 2026", "The walkway at the Galena building opened in December 2020.\n\nThe walkway opened to the public in December 2020.")
+        self.assertNotIn("public", system_with_pages((NEWS_URL + "a", page)).answer("When did the Galena building open?").text)
+
     def test_a_question_asking_the_date_of_one_unnamed_word_refuses(self):
         page = article("June 1, 2026", "Members saved $5 million through Holiday Club savings in 2025.")
         self.assertFalse(system_with_pages((NEWS_URL + "a", page)).answer("When are holidays?").confident)

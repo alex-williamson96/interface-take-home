@@ -70,6 +70,12 @@ DATES_THE_SITE_STATES = (
     ("How old is Dupaco?", "1948"),
     ("When was Dupaco Credit Union established?", "1948"),
     ("When was the credit union founded?", "1948"),
+    ("When did the Hy-Vee branch shut down?", "March 31, 2026"),
+    ("When is the next nonprofit grant cycle?", "2027"),
+    ("When was the Mineral Point branch ribbon cutting?", "September 29, 2022"),
+    ("When did the Sycamore Street branch renovation finish?", "April 6, 2026"),
+    ("When was the Dupaco Voices Building completed?", "May 19, 2022"),
+    ("When did Dupaco acquire Home Savings Bank?", "2021"),
 )
 
 ANSWERS_THAT_MUST_STATE_A_FACT = (
@@ -115,8 +121,8 @@ FEES_AND_LIMITS_THE_SITE_DOES_NOT_STATE = (
     "When will Dupaco close?",
     "When will the certificate special end?",
     "When are holidays?",
-    "When will scholarship winners be announced?",
-    "When is the Dupaco Foundation scholarship?",
+    "When did the Dupaco Voices Building open?",
+    "When is the Dupaco Foundation nonprofit grant deadline?",
     "Is the Coralville Branch open yet?",
     "Can I pay my mortgage at a branch?",
 )

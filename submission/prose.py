@@ -13,10 +13,16 @@ IMAGE = re.compile(r"!\[[^\]]*\]\([^)]*\)")
 LINK = re.compile(r"\[([^\]]*)\]\(([^)\s]*)[^)]*\)")
 MARKUP = re.compile(r"\\?\*+|\\|^#+\s*|^>\s*|^[-•]\s+", re.M)
 QUESTION_WORD = re.compile(r"[a-z0-9$]+(?:'[a-z]+)?")
-WORD_ENDING = re.compile(r"(?:ibility|ible|ation|ition|tion|ized|izes|ize|ing|ed|es|e)$")
+WORD_ENDING = re.compile(r"(?:ibility|ible|ation|ition|tion|(?<=\w{4})(?:ated|ates|ate)|ized|izes|ize|ing|ed|es|e)$")
 SHORTEST_WORD_WITH_ITS_ENDING_REMOVED = 5
 WORDS_THAT_MEAN_SOMETHING_ELSE_WITHOUT_THEIR_ENDING = frozenset({"foundation", "founded"})
-ROOTS_OF_IRREGULAR_WORDS = {"closure": "clos"}
+ROOTS_OF_IRREGULAR_WORDS = {
+    "closure": "clos",
+    "acquisition": "acquir",
+    "completion": "complet",
+    "finish": "complet",
+    "finished": "complet",
+}
 SENTENCE_END = re.compile(r"(?<=[.!?])(?<![\s.][A-Z]\.)\s+(?=[A-Z\"“])")
 PUBLISHED = re.compile(
     r"\b(January|February|March|April|May|June|July|August|September|October|November|December) (\d{1,2}), (20\d\d)\b"
@@ -29,6 +35,7 @@ MONTH_NUMBERS = {
     )
 }
 CAPITALIZED_AFTER_FIRST_WORD = re.compile(r"(?<=\s)[A-Z][A-Za-z$'-]*")
+MONTH_NAMES = "January February March April May June July August September October November December".split()
 
 CHARS_SEARCHED_FOR_PUBLISHED_DATE = 400
 LONGEST_LINE_MERGED_INTO_A_BLOCK = 80
@@ -119,6 +126,11 @@ CLOSED_ASKED = re.compile(r"^\s*(?:is|are|has|have|did)\s+(.+?)\s+(?:closed|clos
 WHEN_IT_CLOSES_ASKED = re.compile(r"^\s*when\s+(?:will|does|do|did|is|are)\s+(.+?)\s+clos(?:e|ing)\s*\??\s*$", re.I)
 LOWERCASE_WORD = re.compile(r"\b[a-z]{2,}")
 FEWEST_ASKED_WORDS_WITHOUT_A_NAME = 2
+REFERS_BACK_TO_THE_SUBJECT = re.compile(
+    r"^\W*(?:this|it|its|founded|established|the (?:branch|location|acquisition|credit union|office|building)\b)\b", re.I
+)
+ASKED_IN_THE_PAST = re.compile(r"\b(?:did|was|were)\b", re.I)
+SHUT_DOWN = re.compile(r"\bshut(?:ting|s)?(?: down)?\b", re.I)
 RATE_SHEET_FOOTER = re.compile(r"\brates are effective as of\b", re.I)
 LAST_DAY_ASKED = re.compile(r"\blast day (?:for|of|at)\s+(.+?)\s*\??\s*$", re.I)
 AHEAD_NOT_NOW_ASKED = re.compile(r"\bwill\b|\bgoing to\b", re.I)
@@ -356,6 +368,33 @@ class PassageIndex:
         return ranked
 
     def search(self, question: str) -> Optional[Found]:
+        question = SHUT_DOWN.sub("close", question)
+        return self._search_by_kind_of_question(question) or self._date_from_the_article(question)
+
+    def _date_from_the_article(self, question: str) -> Optional[Found]:
+        names = _names_in(question)
+        asked = _asked_beyond_the_name(question, names)
+        whether_it_closed = STILL_OPEN_ASKED.search(question) or CLOSED_ASKED.search(question)
+        if not names or not asked or whether_it_closed or _shape_asked_for(question) is not DATE_OR_YEAR:
+            return None
+        if not ASKED_IN_THE_PAST.search(question):
+            return None
+        statements = [
+            (sentence, passage)
+            for passage in self._passages
+            if passage.has_its_own_date and names <= passage.title_words and asked & passage.title_words
+            for sentence in SENTENCE_END.split(passage.text)
+            if names <= set(words_in(sentence))
+            and asked <= set(words_in(sentence))
+            and not WRITTEN_AS_STILL_AHEAD.search(sentence)
+            and not sentence.endswith(("?", ":"))
+        ]
+        if not statements:
+            return None
+        sentence, passage = max(statements, key=lambda statement: statement[1].published)
+        return Found(f"{sentence} (article dated {_written_out(passage.published)})", (passage.url,), passage.text)
+
+    def _search_by_kind_of_question(self, question: str) -> Optional[Found]:
         if DUPACO_ORIGIN_ASKED.search(question):
             return self._search_as_worded(WHEN_DUPACO_WAS_FOUNDED)
         if COUNTED_THING.search(question):
@@ -450,7 +489,15 @@ class PassageIndex:
         if shape in (ADDRESS, ROUTING_NUMBER):
             value = shape.search(best.text).group(0)
             return Found(value + ".", self._pages_stating(value, best), best.text)
-        found = _answer_from_page(question, best, self._passages_of[best.url], names, shape)
+        passages_to_try = _dated_passages_to_try(best, terms, ranked) if shape is DATE_OR_YEAR else [best]
+        found = next(
+            (
+                answer
+                for passage in passages_to_try
+                if (answer := _answer_from_page(question, passage, self._passages_of[passage.url], names, shape))
+            ),
+            None,
+        )
         if not found or shape is not DATE_OR_YEAR or not STILL_AHEAD_ASKED.search(question):
             return found
         if self._reads_ahead_but_passed(found.text):
@@ -691,10 +738,28 @@ def _titled_with_the_name(
     return [scored for scored in ranked if names <= scored[1].title_words]
 
 
-def _newest_among_the_tied(ranked: list[tuple[float, Passage]]) -> Passage:
+def _tied_for_the_top(ranked: list[tuple[float, Passage]]) -> list[Passage]:
     top_score = ranked[0][0]
-    tied = [passage for score, passage in ranked if score >= top_score * SHARE_OF_TOP_SCORE_CONSIDERED_TIED]
-    return max(tied, key=lambda passage: passage.published)
+    return [passage for score, passage in ranked if score >= top_score * SHARE_OF_TOP_SCORE_CONSIDERED_TIED]
+
+
+def _newest_among_the_tied(ranked: list[tuple[float, Passage]]) -> Passage:
+    return max(_tied_for_the_top(ranked), key=lambda passage: passage.published)
+
+
+def _dated_passages_to_try(best: Passage, terms: set[str], ranked: list[tuple[float, Passage]]) -> list[Passage]:
+    on_the_same_page = [passage for _, passage in ranked if passage.url == best.url]
+    titled_with_what_was_asked = sorted(
+        (passage for _, passage in ranked if terms <= passage.title_words),
+        key=lambda passage: passage.published,
+        reverse=True,
+    )
+    return [best, *on_the_same_page, *titled_with_what_was_asked]
+
+
+def _written_out(published: str) -> str:
+    year, month, day = published.split("-")
+    return f"{MONTH_NAMES[int(month) - 1]} {int(day)}, {year}"
 
 
 def _belongs_beside_the_best_passage(sentence: str, names: set[str], shape: Optional[re.Pattern]) -> bool:
@@ -709,7 +774,7 @@ def _sentence_stating_the_date(question: str, sentences: list[str], names: set[s
 
     def strength(sentence: str) -> tuple[bool, int, int, bool]:
         words = set(words_in(_through_the_date(sentence)))
-        mentions_it = _mentions(_through_the_date(sentence), asked)
+        mentions_it = _states_it_about_the_name(sentence, asked, names)
         return mentions_it, len(asked & words), len(terms & words), bool(FULL_DATE.search(sentence))
 
     return max(sentences, key=strength)
@@ -722,6 +787,11 @@ def _can_state_a_date(sentence: str) -> bool:
         and not RATE_SHEET_FOOTER.search(sentence)
         and not sentence.endswith(("?", ":"))
     )
+
+
+def _states_it_about_the_name(sentence: str, asked: set[str], names: set[str]) -> bool:
+    about_the_name = names <= set(words_in(sentence)) or bool(REFERS_BACK_TO_THE_SUBJECT.search(sentence))
+    return about_the_name and _mentions(_through_the_date(sentence), asked)
 
 
 def _names_what_it_asks_the_date_of(question: str, names: set[str]) -> bool:
@@ -797,7 +867,7 @@ def _answer_from_page(
         return None
     if shape is DATE_OR_YEAR:
         sentence = _sentence_stating_the_date(question, list(passage_of), names)
-        if not _mentions(_through_the_date(sentence), _asked_beyond_the_name(question, names)):
+        if not _states_it_about_the_name(sentence, _asked_beyond_the_name(question, names), names):
             return None
         return Found(_through_the_date(sentence), (best.url,), passage_of[sentence].text)
     worth_keeping = [s for s in passage_of if overlap[s] >= best_overlap * LOWEST_SHARE_OF_BEST_SENTENCE_KEPT]
