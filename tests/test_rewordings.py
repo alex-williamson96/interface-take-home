@@ -46,6 +46,8 @@ NOTHING_ON_THE_SITE_ANSWERS_THESE = (
     "What is the address of the Chicago branch?",
     "What's the routing number for Chase?",
     "When did Dupaco open its first branch?",
+    "Is Dupaco closed?",
+    "Is Dupaco open?",
     "When does the Dupaco Foundation scholarship application open?",
     "Who won the Super Bowl?",
     "Tell me a joke",
@@ -67,6 +69,24 @@ DATES_THE_SITE_STATES = (
     ("When did Dupaco start?", "1948"),
     ("How old is Dupaco?", "1948"),
     ("When was Dupaco Credit Union established?", "1948"),
+)
+
+ANSWERS_THAT_MUST_STATE_A_FACT = (
+    ("Can you tell me if the Hy-Vee branch is still open?", "March 31, 2026"),
+    ("Is the Hy-Vee branch open?", "March 31, 2026"),
+    ("Is the Hy-Vee branch closed?", "March 31, 2026"),
+    ("Has the Hy-Vee branch closed?", "March 31, 2026"),
+    ("Did the Hy-Vee branch close?", "March 31, 2026"),
+    ("Is the Hy-Vee branch closing?", "March 31, 2026"),
+    ("What is the last day for the Hy-Vee branch?", "March 31, 2026"),
+    ("What is Dupaco's routing transit number?", "273974581"),
+    ("What is the routing/transit number?", "273974581"),
+    ("What's the routing number for Dupaco Community Credit Union?", "273974581"),
+    ("What is your ABA number?", "273974581"),
+    ("What has Forbes recognized Dupaco for?", "fifth"),
+    ("How has Forbes recognized Dupaco?", "fifth"),
+    ("Has Forbes recognized Dupaco?", "fifth"),
+    ("What award did Dupaco get from Forbes?", "fifth"),
 )
 
 COUNTS_THE_SITE_STATES = (
@@ -163,6 +183,11 @@ class RewordingsAgainstRealSnapshots(unittest.TestCase):
         for question in QUESTIONS_NAMING_NO_BRANCH_THAT_MUST_NOT_BE_TOLD_ONE_CLOSED:
             with self.subTest(question):
                 self.assertNotIn("March 31, 2026", self.system.answer(question).text)
+
+    def test_a_reworded_question_still_states_the_fact_it_asks_for(self):
+        for question, fact in ANSWERS_THAT_MUST_STATE_A_FACT:
+            with self.subTest(question):
+                self.assertIn(fact, self.system.answer(question).text)
 
     def test_a_count_is_the_newest_dupaco_states_about_itself(self):
         for question, count in COUNTS_THE_SITE_STATES:

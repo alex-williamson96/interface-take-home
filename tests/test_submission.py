@@ -238,6 +238,13 @@ class AnswersFromPageText(unittest.TestCase):
         self.assertTrue(asked_with("March 31, 2026").startswith("No. "))
         self.assertTrue(asked_with("March 31, 2027").startswith("Yes, for now. "))
 
+    def test_asked_whether_it_closed_the_lead_answers_that_question(self):
+        def asked_with(closing: str) -> str:
+            page = article("June 1, 2025", f"The Galena branch will close {closing}.")
+            return system_with_pages((NEWS_URL + "a", page)).answer("Has the Galena branch closed?").text
+        self.assertTrue(asked_with("March 31, 2026").startswith("Yes. "))
+        self.assertTrue(asked_with("March 31, 2027").startswith("Not yet. "))
+
     def test_still_open_refuses_when_only_a_schedule_says_closed(self):
         page = article("June 1, 2026", "Galena branch hours are:\n\n**Lobby**\n\nMonday-Friday: 8:30 a.m.-5 p.m.\n\nSunday: Closed")
         self.assertFalse(system_with_pages((NEWS_URL + "a", page)).answer("Are the Galena branch hours still open?").confident)

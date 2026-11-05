@@ -81,7 +81,7 @@ DUPACO_ORIGIN_ASKED = re.compile(
     re.I,
 )
 WHEN_DUPACO_WAS_FOUNDED = "When was Dupaco founded?"
-ROUTING_ASKED = re.compile(r"\brouting\b", re.I)
+ROUTING_ASKED = re.compile(r"\brouting\b|\baba\b", re.I)
 HOW_TO_REACH_ASKED = re.compile(
     r"\bphone (?:numbers?|for)\b|\b(?:your|dupaco's) phone\b|\bcontact information\b"
     r"|\b(?:who|number)\b.*\bcall\b|\bcall (?:you|dupaco|someone)\b",
@@ -99,7 +99,13 @@ BRANCH_COUNT = re.compile(r"(?<![\d,])\b(\d{1,3}) (?:\w+ )?branch(?:es)?\b", re.
 FULL_DATE = re.compile(rf"\b({'|'.join(MONTH_NUMBERS)})[a-z]*\.? (\d{{1,2}}), (20\d\d)\b")
 BARE_YEAR = re.compile(r"\b(?:19|20)\d\d\b")
 STILL_AHEAD_ASKED = re.compile(r"\bwill\b|\bgoing to\b|\b(?:does|do|is|are)\b", re.I)
-STILL_OPEN_ASKED = re.compile(r"^\s*(?:is|are)\s+(.+?)\s+still open\b", re.I)
+STILL_OPEN_ASKED = re.compile(
+    r"^\s*(?:is|are)\s+(.+?)\s+(?:still open\b|open(?: anymore| any more)?\s*\??\s*$)"
+    r"|\bif\s+(.+?)\s+(?:is|are)\s+still open\b",
+    re.I,
+)
+CLOSED_ASKED = re.compile(r"^\s*(?:is|are|has|have|did)\s+(.+?)\s+(?:closed|closing|close)\s*\??\s*$", re.I)
+LAST_DAY_ASKED = re.compile(r"\blast day (?:for|of|at)\s+(.+?)\s*\??\s*$", re.I)
 AHEAD_NOT_NOW_ASKED = re.compile(r"\bwill\b|\bgoing to\b", re.I)
 WRITTEN_AS_STILL_AHEAD = re.compile(r"\b(?:will|plans?|planned|expected|scheduled)\b", re.I)
 CLOSING_STATED = re.compile(r"\bclos(?:e|es|ed|ing|ure)\b|\blast day\b", re.I)
@@ -162,6 +168,9 @@ COUNTED_AS_BRANCHES = frozenset(stem(word) for word in ("location", "office"))
 WORDS_IN_DUPACOS_OWN_NAME = frozenset(words_in("community credit union"))
 WORDS_THAT_NAME_NOTHING_ALONE = WORDS_ANY_BRANCH_SHARES | WORDS_IN_DUPACOS_OWN_NAME
 CLOSE = _without_ending(stem("close"))
+WORDS_ROUTING_IS_FOUND_BY = frozenset(words_in("routing"))
+NO_IF_CLOSED = ("No.", "Yes, for now.")
+YES_IF_CLOSED = ("Yes.", "Not yet.")
 WORDS_NAMING_A_KIND_OF_HOURS = frozenset(words_in("lobby drive"))
 WORDS_ABOUT_REACHING_DUPACO = frozenset(
     words_in("call contact information update change customer member service support main general credit union talk speak reach someone")
@@ -318,30 +327,40 @@ class PassageIndex:
             return self._search_as_worded(WHEN_DUPACO_WAS_FOUNDED)
         if COUNTED_THING.search(question):
             question = FULL_SERVICE.sub(" ", question)
+        last_day = LAST_DAY_ASKED.search(question)
+        if last_day and _names_in(_when_will_it_close(last_day.group(1))):
+            return self._search_as_worded(_when_will_it_close(last_day.group(1)))
         still_open = STILL_OPEN_ASKED.search(question)
-        if still_open:
-            place = still_open.group(1)
+        closed = CLOSED_ASKED.search(question)
+        if still_open or closed:
+            place = next(group for group in (still_open or closed).groups() if group)
             if _names_in(_when_will_it_close(place)):
-                return self._is_it_still_open(place)
+                return self._has_it_closed(place, leads=YES_IF_CLOSED if closed else NO_IF_CLOSED)
             if A_BRANCH_ASKED_ABOUT.search(place):
                 return self._which_branch()
+            if not _search_terms(place):
+                return None
         if not (DATE_ASKED.search(question) and FOUNDING_ASKED.search(question)):
             return self._search_as_worded(question)
         names = _names_in(question)
         if not names:
             return self._search_as_worded(FOUNDING_ASKED.sub("founded", question))
-        found = self._search_as_worded(question) or self._search_as_worded(FOUNDING_ASKED.sub("established", question))
+        found = (
+            self._search_as_worded(question)
+            or self._search_as_worded(FOUNDING_ASKED.sub("established", question))
+            or self._search_as_worded(FOUNDING_ASKED.sub("founded", question))
+        )
         return found and replace(found, conflict_note=self._disagreement_about_founding(names))
 
     def _which_branch(self) -> Found:
         locator = self._locator_url()
         return Found("That depends on the branch; which branch do you need?", (locator,) if locator else (), "")
 
-    def _is_it_still_open(self, place: str) -> Optional[Found]:
+    def _has_it_closed(self, place: str, leads: tuple[str, str]) -> Optional[Found]:
         found = self._search_as_worded(_when_will_it_close(place))
         if not found or not CLOSING_STATED.search(found.text) or not DATE_OR_YEAR.search(found.text):
             return None
-        lead = "No." if self._has_passed(found.text) else "Yes, for now."
+        lead = leads[0] if self._has_passed(found.text) else leads[1]
         return replace(found, text=f"{lead} {found.text}")
 
     def _disagreement_about_founding(self, names: set[str]) -> Optional[str]:
@@ -364,6 +383,8 @@ class PassageIndex:
         shape = _shape_asked_for(question)
         fewest_body_matches = 1 if shape else FEWEST_MATCHED_TERMS_WITHOUT_A_TITLE_MATCH
         terms = _search_terms(question) - (WORDS_A_SHAPE_ALREADY_SATISFIES if shape else frozenset())
+        if shape is ROUTING_NUMBER:
+            terms = WORDS_ROUTING_IS_FOUND_BY
         ranked = self._ranked(terms, names, shape, fewest_body_matches)
         if shape is ADDRESS and not ATM_ASKED.search(question):
             ranked = [scored for scored in ranked if DUPACO_BRANCH_LISTING.search(scored[1].text)]
@@ -382,7 +403,7 @@ class PassageIndex:
             ranked = [scored for scored in ranked if names <= scored[1].words]
             if not ranked:
                 return None
-        best = _newest_among_the_tied(ranked)
+        best = _newest_among_the_tied(_titled_with_the_name(question, names, shape, ranked) or ranked)
         if shape in (ADDRESS, ROUTING_NUMBER):
             value = shape.search(best.text).group(0)
             return Found(value + ".", self._pages_stating(value, best), best.text)
@@ -588,6 +609,14 @@ def _shape_asked_for(question: str) -> Optional[re.Pattern]:
         stated_count = rf"\b(?!(?:19|20)\d\d\b)\d+(?:,\d{{3}})*\s+(?:\w+\s+)?{re.escape(singular)}"
         return re.compile(f"{MEMBERSHIP_TOTAL}|{stated_count}" if counted_word == MEMBER else stated_count, re.I)
     return None
+
+
+def _titled_with_the_name(
+    question: str, names: set[str], shape: Optional[re.Pattern], ranked: list[tuple[float, Passage]]
+) -> list[tuple[float, Passage]]:
+    if not names or shape is not None or DEFINITION_ASKED.search(question):
+        return []
+    return [scored for scored in ranked if names <= scored[1].title_words]
 
 
 def _newest_among_the_tied(ranked: list[tuple[float, Passage]]) -> Passage:
