@@ -164,6 +164,12 @@ class AnswersFromPageText(unittest.TestCase):
         for question in ("What's the current 30-year fixed?", "How much is the 17-month certificate special?"):
             self.assertFalse(system.answer(question).confident, question)
 
+    def test_a_link_to_business_rates_is_the_business_product_page(self):
+        business_url = "https://www.dupaco.com/business/savings/certificates"
+        sheet = dated_certificate_table("3.80%", "4/2/2026")
+        system = system_with_pages((PRODUCT_URL, sheet), (business_url, sheet))
+        self.assertEqual(system.answer("What link shows your business CD rates?").text, business_url)
+
 
 class AnswerBehaviour(unittest.TestCase):
     def test_as_of_answers_from_the_newest_snapshot_on_or_before_that_date(self):

@@ -6,7 +6,14 @@ from typing import Optional
 
 from contract import Answer, Conflict, Snapshot, Source
 from prose import Found, PassageIndex
-from question import RateQuestion, asks_for_a_link, family_of_rates_asked_about, parse_rate_question, search_may_answer
+from question import (
+    BUSINESS_ASKED,
+    RateQuestion,
+    asks_for_a_link,
+    family_of_rates_asked_about,
+    parse_rate_question,
+    search_may_answer,
+)
 from rate_facts import RateFact, extract_rate_facts, stem
 
 REFUSAL_TEXT = "I can't confirm that from the website. Please contact Dupaco."
@@ -76,8 +83,11 @@ def _answer_from_search(question: str, snapshot: IndexedSnapshot) -> Answer:
 
 def _link_answer(question: str, snapshot: IndexedSnapshot) -> Optional[Found]:
     family = family_of_rates_asked_about(question)
+    business = bool(BUSINESS_ASKED.search(question))
     product_pages = Counter(
-        f.url.split("#")[0] for f in snapshot.facts if f.family == family and not f.from_rate_sheet and not f.business
+        f.url.split("#")[0]
+        for f in snapshot.facts
+        if f.family == family and not f.from_rate_sheet and f.business == business
     )
     if not product_pages:
         return snapshot.passages.link_for(question)
