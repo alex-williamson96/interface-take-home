@@ -15,6 +15,7 @@ NON_RATE_TOPIC = re.compile(
     r"(?:apple|google|samsung) pay|earn (?:points|rewards|cash back)|percent down|down payment)\b",
     re.I,
 )
+FEE_ASKED = re.compile(r"\b(fees?|penalt(?:y|ies)|overdr(?:aft|aw\w*)|stop payment)\b", re.I)
 ASKS_HOW_RATES_WORK = re.compile(r"^\s*(?:why|when|will|how (?:is|are|often|does|do)|(?:does|do) my)\b", re.I)
 PAYING_A_BILL = re.compile(r"\b(?:can|do|should|must|have to)(?: i)? pay\b|\bpay (?:off|my)\b", re.I)
 CALENDAR_DATE = re.compile(
@@ -145,6 +146,24 @@ def parse_rate_question(question: str) -> Optional[RateQuestion]:
         wants_highest=best_means_highest or bool(HIGHEST_ASKED.search(question)),
         wants_lowest=best_means_lowest or bool(LOWEST_ASKED.search(question)),
     )
+
+
+def asks_for_a_link(question: str) -> bool:
+    return bool(LINK_INTENT.search(question))
+
+
+def family_of_rates_asked_about(question: str) -> Optional[str]:
+    if not RATE_INTENT.search(question):
+        return None
+    return next((name for name, pattern in FAMILY_SYNONYMS if pattern.search(question)), None)
+
+
+def search_may_answer(question: str) -> bool:
+    if FEE_ASKED.search(question) or ASKS_HOW_RATES_WORK.search(question) and RATE_INTENT.search(question):
+        return False
+    if not RATE_INTENT.search(question):
+        return True
+    return any(topic.search(question) for topic in (NON_RATE_TOPIC, PAYING_A_BILL, LINK_INTENT, HOW_TO_ASKED))
 
 
 def _asks_for_a_rate(question: str) -> bool:

@@ -1,10 +1,12 @@
 from __future__ import annotations
 
+from collections import Counter
 from dataclasses import dataclass
 from typing import Optional
 
 from contract import Answer, Conflict, Snapshot, Source
-from question import RateQuestion, parse_rate_question
+from prose import Found, PassageIndex
+from question import RateQuestion, asks_for_a_link, family_of_rates_asked_about, parse_rate_question, search_may_answer
 from rate_facts import RateFact, extract_rate_facts, stem
 
 REFUSAL_TEXT = "I can't confirm that from the website. Please contact Dupaco."
@@ -21,6 +23,7 @@ class IndexedSnapshot:
     snapshot_id: str
     taken_on: str
     facts: tuple[RateFact, ...]
+    passages: PassageIndex
 
 
 class KnowledgeSystem:
@@ -31,13 +34,16 @@ class KnowledgeSystem:
         facts: list[RateFact] = []
         for page in snapshot.pages:
             facts.extend(extract_rate_facts(page.url, page.markdown))
-        self._snapshots.append(IndexedSnapshot(snapshot.snapshot_id, snapshot.taken_on, tuple(facts)))
+        passages = PassageIndex(snapshot.pages, snapshot.taken_on)
+        self._snapshots.append(IndexedSnapshot(snapshot.snapshot_id, snapshot.taken_on, tuple(facts), passages))
 
     def answer(self, question: str, as_of: Optional[str] = None) -> Answer:
         snapshot = self._snapshot_for(as_of)
-        parsed = parse_rate_question(question)
-        if snapshot is None or parsed is None:
+        if snapshot is None:
             return refusal()
+        parsed = parse_rate_question(question)
+        if parsed is None:
+            return _answer_from_search(question, snapshot)
         selected = select_facts(parsed, snapshot.facts)
         if not selected:
             return refusal()
@@ -56,6 +62,27 @@ class KnowledgeSystem:
 
 def refusal() -> Answer:
     return Answer(text=REFUSAL_TEXT, confident=False)
+
+
+def _answer_from_search(question: str, snapshot: IndexedSnapshot) -> Answer:
+    if not search_may_answer(question):
+        return refusal()
+    found = _link_answer(question, snapshot) if asks_for_a_link(question) else snapshot.passages.search(question)
+    if found is None:
+        return refusal()
+    sources = [Source(url=url, snapshot_id=snapshot.snapshot_id, quote=found.quote) for url in found.urls]
+    return Answer(text=found.text, sources=sources)
+
+
+def _link_answer(question: str, snapshot: IndexedSnapshot) -> Optional[Found]:
+    family = family_of_rates_asked_about(question)
+    product_pages = Counter(
+        f.url.split("#")[0] for f in snapshot.facts if f.family == family and not f.from_rate_sheet and not f.business
+    )
+    if not product_pages:
+        return snapshot.passages.link_for(question)
+    page = product_pages.most_common(1)[0][0]
+    return Found(page, (page,), page)
 
 
 def select_facts(question: RateQuestion, facts: tuple[RateFact, ...]) -> list[RateFact]:

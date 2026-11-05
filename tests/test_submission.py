@@ -70,6 +70,95 @@ def system_with_sheet_and_product_page(sheet_date: str, product_date: str) -> Kn
     return system
 
 
+def article(published: str, body: str) -> str:
+    return f"1 min read\n\n{published}\n\n# Article\n\n{body}\n"
+
+
+def system_with_pages(*pages: tuple[str, str]) -> KnowledgeSystem:
+    system = KnowledgeSystem()
+    system.ingest(snapshot("2026-09-28", *pages))
+    return system
+
+
+CONTACT_URL = "https://www.dupaco.com/contact"
+NEWS_URL = "https://www.dupaco.com/newsroom/"
+CONTACT_PAGE = """**Phone:** 800-373-7600
+
+**Routing Number:** 273974581
+
+### Dupaco Credit Union
+
+Dupaco Branch
+
+11375 Oldenburg Ln., Galena, IL, 61036
+
+Closed
+
+[branch or ATM](https://www.dupaco.com/contact#locator)
+"""
+HOURS_ARTICLE = article(
+    "June 1, 2026",
+    "Galena branch hours are:\n\n**Lobby**\n\nMonday-Friday: 8:30 a.m.-5 p.m.\n\nSaturday: 9 a.m.-noon",
+)
+
+
+class AnswersFromPageText(unittest.TestCase):
+    def test_routing_number_is_stated_alone_and_cited(self):
+        answer = system_with_pages((CONTACT_URL, CONTACT_PAGE)).answer("What is the routing number?")
+        self.assertEqual(answer.text, "273974581.")
+        self.assertEqual(answer.sources[0].url, CONTACT_URL)
+
+    def test_address_of_a_listed_branch_is_found_and_an_unlisted_branch_refuses(self):
+        system = system_with_pages((CONTACT_URL, CONTACT_PAGE))
+        self.assertIn("11375 Oldenburg", system.answer("What is the address of the Galena branch?").text)
+        self.assertFalse(system.answer("What is the address of the Chicago branch?").confident)
+
+    def test_hours_for_a_branch_the_site_gives_no_hours_for_refuse(self):
+        system = system_with_pages((NEWS_URL + "galena", HOURS_ARTICLE))
+        self.assertIn("8:30", system.answer("What are the lobby hours?").text)
+        self.assertFalse(system.answer("What are the lobby hours for the Mullan Avenue branch?").confident)
+
+    def test_a_count_comes_from_the_newest_dated_statement_repeated_across_pages(self):
+        older = "It has 23 branch office locations."
+        newest = "It has 22 branch office locations."
+        system = system_with_pages(
+            (NEWS_URL + "a", article("January 1, 2026", older)),
+            (NEWS_URL + "b", article("January 2, 2026", older)),
+            (NEWS_URL + "c", article("January 3, 2026", older)),
+            (NEWS_URL + "d", article("April 1, 2026", newest)),
+            (NEWS_URL + "e", article("April 2, 2026", newest)),
+            (NEWS_URL + "f", article("May 1, 2026", "Members can visit 5,600 participating branches.")),
+            ("https://www.dupaco.com/about", "We now have 18 branches."),
+        )
+        self.assertIn("22 branch", system.answer("How many branches does Dupaco have?").text)
+
+    def test_a_related_article_teaser_is_not_read(self):
+        page = article("June 1, 2026", "Dupaco opened a learning lab.") + (
+            "\n## Handpicked for You\n\nThe Forbes award arrived this year in Dubuque.\n"
+        )
+        self.assertFalse(system_with_pages((NEWS_URL + "a", page)).answer("What Forbes award did Dupaco get?").confident)
+
+    def test_a_rate_or_fee_question_never_falls_back_to_page_text(self):
+        system = system_with_pages(
+            (NEWS_URL + "a", article("June 1, 2026", "The construction loan interest rate is 9.00%. The overdraft fee is $30."))
+        )
+        for question in ("What is the construction loan rate?", "What is the overdraft fee?"):
+            self.assertFalse(system.answer(question).confident, question)
+
+    def test_a_single_word_match_in_body_text_refuses(self):
+        page = article("June 1, 2026", "Protecting your pet is no joke.")
+        self.assertFalse(system_with_pages((NEWS_URL + "a", page)).answer("Tell me a joke").confident)
+
+    def test_a_link_question_gets_the_page_people_link_to(self):
+        answer = system_with_pages((CONTACT_URL, CONTACT_PAGE)).answer("What is the URL for the branch and ATM locator?")
+        self.assertEqual(answer.text, "https://www.dupaco.com/contact")
+
+    def test_a_link_to_rates_is_the_product_page_that_shows_them(self):
+        sheet = dated_certificate_table("3.80%", "4/2/2026")
+        answer = system_with_pages((RATES_URL, sheet), (PRODUCT_URL, sheet)).answer("What link shows your CD rates?")
+        self.assertEqual(answer.text, PRODUCT_URL)
+
+
 class AnswerBehaviour(unittest.TestCase):
     def test_as_of_answers_from_the_newest_snapshot_on_or_before_that_date(self):
         system = system_with_two_dates()
