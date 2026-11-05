@@ -84,6 +84,31 @@ SPELLED_OUT_TERM = re.compile(
     re.I,
 )
 
+EVERYDAY_WORDING = tuple(
+    (re.compile(pattern, re.I), plain)
+    for pattern, plain in (
+        (r"\bannual percentage rates\b", "aprs"),
+        (r"\bdrive[- ]?(?:through|thru)\b", "drive-up"),
+        (r"\bcharging\b", "charge"),
+        (r"\b(?:max|maximum|greatest|biggest)\b", "highest"),
+        (r"\b(\d+)[- ]mos?\b", r"\1-month"),
+        (r"\bcerts?\b", "certificate"),
+        (r"\bbranch count\b", "how many branches"),
+        (r"\bbranch locations\b", "branches"),
+        (r"\bhow many (?:physical |total )?(?:locations|places|offices)\b", "how many branches"),
+        (r"\b(?!branch\b)(\w[\w-]*) (?:location|office)\b", r"\1 branch"),
+        (r"\b(?:awards?|honors?|accolades?|rankings?|shoutouts?)\b(?=.*\bforbes\b)", "recognition"),
+        (r"\b(?:sign up|enroll)\b|(?<!\bcan )\bbecome a member\b", "join"),
+        (r"\bcontact (?:info|details)\b", "contact information"),
+        (r"\bphone number and address\b", "contact information"),
+        (r"\b(?:change|edit|fix|switch)\b(?=.*\bcontact information\b)", "update"),
+        (r"\bwho qualifies\b", "who is eligible"),
+        (r"\bweb address\b", "link"),
+        (r"\b(?:atm|branch) finder\b", "locator"),
+        (r"\b(?:what|which) cards\b(?=.*\b(?:rates?|aprs?|interest)\b)", "what credit cards"),
+    )
+)
+
 REFINANCE_SYNONYM = re.compile(r"\brefi\b|\brefinanc\w*", re.I)
 PHRASES_AS_ONE_WORD = (
     (REFINANCE_SYNONYM, "refinance"),
@@ -154,6 +179,12 @@ class RateQuestion:
     wants_highest: bool
     wants_lowest: bool
     percent_asked_about: Optional[float] = None
+
+
+def in_plain_wording(question: str) -> str:
+    for everyday, plain in EVERYDAY_WORDING:
+        question = everyday.sub(plain, question)
+    return question
 
 
 def parse_rate_question(question: str) -> Optional[RateQuestion]:

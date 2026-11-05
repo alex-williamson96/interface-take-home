@@ -16,10 +16,12 @@ from question import (
     asks_what_changed,
     date_in_the_words,
     family_of_rates_asked_about,
+    in_plain_wording,
     parse_rate_question,
     search_may_answer,
 )
 from rate_facts import RateFact, classify_family, extract_rate_facts, extract_table_facts, page_path, stem
+from llm import ChoosePassage, Reword, NO_PASSAGE_ANSWERS
 
 REFUSAL_TEXT = "I can't confirm that from the website. Please contact Dupaco."
 JUMBO = stem("jumbo")
@@ -40,8 +42,10 @@ class IndexedSnapshot:
 
 
 class KnowledgeSystem:
-    def __init__(self) -> None:
+    def __init__(self, reword: Optional[Reword] = None, choose_passage: Optional[ChoosePassage] = None) -> None:
         self._snapshots: list[IndexedSnapshot] = []
+        self._reword = reword
+        self._choose_passage = choose_passage
 
     def ingest(self, snapshot: Snapshot) -> None:
         facts: list[RateFact] = []
@@ -56,12 +60,21 @@ class KnowledgeSystem:
         )
 
     def answer(self, question: str, as_of: Optional[str] = None) -> Answer:
+        reworded = self._reword(question) if self._reword else question
+        if reworded != question:
+            answer = self._answer_from_rules(reworded, as_of)
+            if answer.confident:
+                return answer
+        return self._answer_from_rules(question, as_of)
+
+    def _answer_from_rules(self, as_asked: str, as_of: Optional[str]) -> Answer:
+        question = in_plain_wording(as_asked)
         parsed = parse_rate_question(question)
         snapshot = self._snapshot_for(as_of or (date_in_the_words(question) if parsed else None))
         if snapshot is None:
             return refusal()
         if parsed is None:
-            return _answer_from_search(question, snapshot)
+            return _answer_from_search(question, snapshot, self._choose_passage)
         selected = select_facts(parsed, snapshot.facts)
         if not selected:
             return refusal()
@@ -112,7 +125,24 @@ def refusal() -> Answer:
     return Answer(text=REFUSAL_TEXT, confident=False)
 
 
-def _answer_from_search(question: str, snapshot: IndexedSnapshot) -> Answer:
+def _found_by_choosing_a_passage(question: str, passages: PassageIndex, choose_passage: Optional[ChoosePassage]) -> Optional[Found]:
+    found_by_rules = passages.search(question)
+    candidates = passages.candidates_for_an_open_question(question) if choose_passage else []
+    if not candidates:
+        return found_by_rules
+    rules_option = [f"The best keyword match ({', '.join(found_by_rules.urls)})\n{found_by_rules.text}"] if found_by_rules else []
+    choice = choose_passage(question, rules_option + [candidate.described for candidate in candidates])
+    if choice is None:
+        return found_by_rules
+    if choice == NO_PASSAGE_ANSWERS:
+        return None
+    if found_by_rules:
+        return found_by_rules
+    chosen = candidates[choice.position]
+    return Found(choice.excerpt, (chosen.url,), chosen.text)
+
+
+def _answer_from_search(question: str, snapshot: IndexedSnapshot, choose_passage: Optional[ChoosePassage] = None) -> Answer:
     fee_on_the_schedule = snapshot.passages.fee_on_the_schedule(question) if asks_a_price(question) else None
     if asks_about_a_fee(question):
         found = snapshot.passages.fee_for(question)
@@ -123,10 +153,10 @@ def _answer_from_search(question: str, snapshot: IndexedSnapshot) -> Answer:
     elif asks_for_a_link(question):
         found = _link_answer(question, snapshot)
     else:
-        found = snapshot.passages.search(question)
+        found = _found_by_choosing_a_passage(question, snapshot.passages, choose_passage)
     if found is None:
         return refusal()
-    sources = [Source(url=url, snapshot_id=snapshot.snapshot_id, quote=found.quote) for url in found.urls]
+    sources =[Source(url=url, snapshot_id=snapshot.snapshot_id, quote=found.quote) for url in found.urls]
     return Answer(text=found.text, sources=sources, conflict_note=found.conflict_note)
 
 

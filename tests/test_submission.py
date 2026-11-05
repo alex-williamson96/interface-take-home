@@ -5,12 +5,14 @@ import sys
 import textwrap
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path[:0] = [str(ROOT / "harness"), str(ROOT / "submission")]
 
 from contract import Page, Snapshot  # noqa: E402
 from knowledge import KnowledgeSystem  # noqa: E402
+from llm import NO_PASSAGE_ANSWERS, Choice, _chosen  # noqa: E402
 
 RATES_URL = "https://www.dupaco.com/rates"
 CALCULATOR_URL = "https://www.dupaco.com/calculators/vehicle-affordability"
@@ -506,6 +508,71 @@ class AnswersFromPageText(unittest.TestCase):
         page = "You can join if you live within our charter area.\n\n# Local\n\nYou can find us in Iowa, Illinois and Wisconsin."
         answer = system_with_pages((NEWS_URL + "a", page)).answer("Who can join if they live in the charter area?").text
         self.assertIn("Iowa, Illinois and Wisconsin", answer)
+
+
+class RewordingBeforeTheRules(unittest.TestCase):
+    SHEET = "Rates\n\n| Loan | Rate | APR |\n| --- | --- | --- |\n| Mortgage 30-Year Fixed | 7.25% | 7.29% |\n"
+
+    def system_rewording_to(self, reworded: str) -> KnowledgeSystem:
+        system = system_with_pages((RATES_URL, self.SHEET))
+        system._reword = lambda untrusted_question: reworded
+        return system
+
+    def test_the_rules_answer_the_reworded_question(self):
+        answer = self.system_rewording_to("What is the APR on a 30-year mortgage?").answer("thirty year home loan, what APR?")
+        self.assertIn("7.29%", answer.text)
+
+    def test_a_rewording_the_rules_refuse_falls_back_to_the_members_own_words(self):
+        answer = self.system_rewording_to("What is the rate on a 7/1 ARM?").answer("What is the APR on a 30-year mortgage?")
+        self.assertIn("7.29%", answer.text)
+
+
+class ChoosingAPassage(unittest.TestCase):
+    PAGE = "https://www.dupaco.com/about/shine"
+    STATED = "Shine Online is the free banking app every member can use from a phone."
+    QUESTION = "What app can members bank from on a phone?"
+
+    def system_choosing(self, choose_passage) -> KnowledgeSystem:
+        system = system_with_pages((self.PAGE, f"# Shine\n\n{self.STATED}\n"))
+        system._choose_passage = choose_passage
+        return system
+
+    def test_when_the_rules_find_nothing_the_answer_is_the_chosen_excerpt_cited_to_its_page(self):
+        question = "Which escrow paperwork, appraisal forms and title documents come with the free app?"
+        self.assertFalse(self.system_choosing(None).answer(question).confident)
+        excerpt = "Shine Online is the free banking app"
+        answer = self.system_choosing(lambda asked, passages: Choice(0, excerpt)).answer(question)
+        self.assertEqual(answer.text, excerpt)
+        self.assertEqual(answer.sources[0].url, self.PAGE)
+
+    def test_when_the_rules_find_an_answer_the_model_cannot_replace_it(self):
+        answer_from_rules = self.system_choosing(None).answer(self.QUESTION).text
+        answer = self.system_choosing(lambda question, passages: Choice(len(passages) - 1, "Shine")).answer(self.QUESTION)
+        self.assertEqual(answer.text, answer_from_rules)
+
+    def test_when_no_passage_answers_the_system_refuses_instead_of_searching(self):
+        answer = self.system_choosing(lambda question, passages: NO_PASSAGE_ANSWERS).answer(self.QUESTION)
+        self.assertFalse(answer.confident)
+
+    def test_an_unavailable_model_leaves_the_question_to_the_rules(self):
+        with_failed_call = self.system_choosing(lambda question, passages: None).answer(self.QUESTION)
+        self.assertEqual(with_failed_call.text, self.system_choosing(None).answer(self.QUESTION).text)
+
+    def test_questions_with_their_own_rule_never_reach_the_model(self):
+        def fails_if_called(question, passages):
+            raise AssertionError(question)
+
+        system = self.system_choosing(fails_if_called)
+        for question in ("How many branches does Dupaco have?", "What is your routing number?", "When does the Hy-Vee branch close?"):
+            system.answer(question)
+
+    def test_an_excerpt_that_is_not_in_the_passage_is_never_used(self):
+        reply = SimpleNamespace(
+            stop_reason="end_turn",
+            content=[SimpleNamespace(type="text", text='{"passage": 1, "excerpt": "Shine pays 9.99% APY."}')],
+        )
+        client = SimpleNamespace(beta=SimpleNamespace(messages=SimpleNamespace(create=lambda **request: reply)))
+        self.assertEqual(_chosen(client, self.QUESTION, [self.STATED]), NO_PASSAGE_ANSWERS)
 
 
 class Conflicts(unittest.TestCase):

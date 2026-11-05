@@ -53,6 +53,7 @@ PAGES_CITED = 4
 LOWEST_COVERAGE_TO_ANSWER = 0.6
 SHARE_OF_TOP_SCORE_CONSIDERED_TIED = 0.9
 TITLE_MATCH_BONUS = 0.25
+PASSAGES_TO_CHOOSE_FROM = 20
 DIGITS_THAT_RANK_A_PASSAGE = 9
 LOWEST_SHARE_OF_BEST_SENTENCE_KEPT = 0.5
 LANDING_PAGE_SUFFIX = "-lp"
@@ -175,6 +176,10 @@ class Passage:
     published: str
     has_its_own_date: bool
     trust: float
+
+    @property
+    def described(self) -> str:
+        return f"{self.title} ({self.published or 'undated'}, {self.url})\n{self.display}"
 
 
 @dataclass(frozen=True)
@@ -379,6 +384,20 @@ class PassageIndex:
                 ranked.append((score, passage))
         ranked.sort(key=lambda scored: scored[0], reverse=True)
         return ranked
+
+    def candidates_for_an_open_question(self, question: str) -> list[Passage]:
+        question = SHUT_DOWN.sub("close", question)
+        if not _is_open_ended(question, _names_in(question)):
+            return []
+        terms = _search_terms(question)
+        positions = sorted({position for term in terms for position in self._postings.get(term, [])})
+
+        def relevance(position: int) -> float:
+            passage = self._passages[position]
+            title_share = len(terms & passage.title_words) / len(terms)
+            return self._coverage(terms, passage) * passage.trust * (1 + TITLE_MATCH_BONUS * title_share)
+
+        return [self._passages[position] for position in sorted(positions, key=relevance, reverse=True)[:PASSAGES_TO_CHOOSE_FROM]]
 
     def search(self, question: str) -> Optional[Found]:
         question = SHUT_DOWN.sub("close", question)
@@ -770,6 +789,23 @@ def _stating_any_first_or_last_asked_about(
 ) -> list[tuple[float, Passage]]:
     asked = [" ".join(words_in(found)) for found in FIRST_OR_LAST_OF_A_KIND.findall(question)]
     return [scored for scored in ranked if all(phrase in " ".join(words_in(scored[1].text)) for phrase in asked)]
+
+
+def _is_open_ended(question: str, names: set[str]) -> bool:
+    has_its_own_rule = (
+        DUPACO_ORIGIN_ASKED,
+        ELIGIBILITY_ASKED,
+        STILL_OPEN_ASKED,
+        CLOSED_ASKED,
+        WHEN_IT_CLOSES_ASKED,
+        LAST_DAY_ASKED,
+        COUNTED_THING,
+    )
+    return (
+        not any(pattern.search(question) for pattern in has_its_own_rule)
+        and _shape_asked_for(question) is None
+        and not _asks_when_a_branch_is_open(question, names)
+    )
 
 
 def _search_terms(question: str) -> set[str]:
