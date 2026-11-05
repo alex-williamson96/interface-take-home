@@ -105,8 +105,14 @@ class RewordingsAgainstRealSnapshots(unittest.TestCase):
                 self.assertIn(date, answer.text)
                 self.assertNotIn("membership", answer.text)
 
-    def test_a_date_question_about_an_unnamed_branch_asks_which_and_lists_only_those_closing(self):
+    def test_a_will_question_about_closures_already_past_says_nothing_is_upcoming(self):
         answer = self.system.answer("When will the branch close?").text
+        self.assertTrue(answer.startswith("The site shows nothing upcoming."), answer)
+        self.assertIn("March 31, 2026", answer)
+        self.assertIn("Oct. 1, 2024", answer)
+
+    def test_a_date_question_about_an_unnamed_branch_asks_which_and_lists_only_those_closing(self):
+        answer = self.system.answer("When did the branch close?").text
         self.assertIn("which branch", answer)
         self.assertIn("Hy-Vee", answer)
         self.assertIn("Asbury", answer)

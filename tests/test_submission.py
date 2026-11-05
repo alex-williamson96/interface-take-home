@@ -191,14 +191,34 @@ class AnswersFromPageText(unittest.TestCase):
         answer = system_with_pages((NEWS_URL + "a", page)).answer("When was the Hoefer Foundation established?").text
         self.assertTrue(answer.endswith("Robert W. Hoefer of Dubuque."), answer)
 
-    def test_a_date_question_about_an_unnamed_branch_asks_which_when_pages_differ(self):
+    def test_a_will_question_about_a_date_already_past_says_so(self):
+        page = article("June 1, 2025", "The Galena branch will close March 31, 2026.")
+        system = system_with_pages((NEWS_URL + "a", page))
+        self.assertEqual(system.answer("When will the Galena branch close?").text[:22], "That date has passed: ")
+        self.assertNotIn("passed", system.answer("When did the Galena branch close?").text)
+
+    def test_a_will_question_about_an_unnamed_branch_lists_only_upcoming_dates(self):
         closing = article("June 1, 2026", "This branch will close on {}.")
+        def asked_with(*dates: str) -> str:
+            system = KnowledgeSystem()
+            system.ingest(Snapshot("s", "2026-09-28", [
+                Page(f"{NEWS_URL}{date[-4:]}", f"Branch closing {date[-4:]}", closing.format(date), "2026-09-28")
+                for date in dates
+            ]))
+            return system.answer("When will the branch close?").text
+        self.assertTrue(asked_with("March 31, 2026", "Oct. 1, 2024").startswith("The site shows nothing upcoming."))
+        upcoming = asked_with("March 31, 2027", "Oct. 1, 2024")
+        self.assertIn("March 31, 2027", upcoming)
+        self.assertNotIn("Oct. 1, 2024", upcoming)
+
+    def test_a_date_question_about_an_unnamed_branch_asks_which_when_pages_differ(self):
+        closing = article("June 1, 2026", "This branch closed on {}.")
         system = KnowledgeSystem()
         system.ingest(Snapshot("s", "2026-09-28", [
             Page(NEWS_URL + "a", "Galena branch closing | Dupaco", closing.format("March 31, 2026"), "2026-09-28"),
             Page(NEWS_URL + "b", "Asbury branch closing | Dupaco", closing.format("Oct. 1, 2024"), "2026-09-28"),
         ]))
-        answer = system.answer("When will the branch close?").text
+        answer = system.answer("When did the branch close?").text
         self.assertIn("which branch", answer)
         self.assertIn("Galena branch closing", answer)
         self.assertIn("Asbury branch closing", answer)
@@ -271,11 +291,11 @@ class AnswersFromPageText(unittest.TestCase):
     def test_which_branch_lists_only_pages_titled_with_what_was_asked(self):
         system = KnowledgeSystem()
         system.ingest(Snapshot("s", "2026-09-28", [
-            Page(NEWS_URL + "a", "Galena branch closure", article("June 1, 2026", "This branch will close in 2026."), "2026-09-28"),
-            Page(NEWS_URL + "b", "Asbury branch closing", article("June 1, 2026", "This branch will close in 2024."), "2026-09-28"),
-            Page(NEWS_URL + "c", "Bank acquisition", article("June 1, 2026", "Old branches will close in 2022."), "2026-09-28"),
+            Page(NEWS_URL + "a", "Galena branch closure", article("June 1, 2026", "This branch did close in 2026."), "2026-09-28"),
+            Page(NEWS_URL + "b", "Asbury branch closing", article("June 1, 2026", "This branch did close in 2024."), "2026-09-28"),
+            Page(NEWS_URL + "c", "Bank acquisition", article("June 1, 2026", "Old branches did close in 2022."), "2026-09-28"),
         ]))
-        answer = system.answer("When will the branch close?").text
+        answer = system.answer("When did the branch close?").text
         self.assertIn("Galena branch closure", answer)
         self.assertIn("Asbury branch closing", answer)
         self.assertNotIn("Bank acquisition", answer)

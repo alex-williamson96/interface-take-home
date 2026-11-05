@@ -82,7 +82,9 @@ DATE_OR_YEAR = re.compile(PUBLISHED.pattern + r"|\b(?:19|20)\d\d\b")
 FOUNDING_ASKED = re.compile(r"\b(?:founded|established)\b", re.I)
 FOUNDING_YEAR = re.compile(r"\b(?:founded|founding|established)\b\D{0,10}((?:19|20)\d\d)\b", re.I)
 CLAUSE_BREAK = re.compile(r",\s+(?!\d)")
-FULL_DATE = re.compile(r"\b[A-Z][a-z]{2,8}\.? \d{1,2}, 20\d\d\b")
+FULL_DATE = re.compile(rf"\b({'|'.join(MONTH_NUMBERS)})[a-z]*\.? (\d{{1,2}}), (20\d\d)\b")
+BARE_YEAR = re.compile(r"\b(?:19|20)\d\d\b")
+FUTURE_ASKED = re.compile(r"\bwill\b|\bgoing to\b", re.I)
 TIME_OF_DAY = re.compile(r"\d(?::\d\d)?\s*[ap]\.?m\b", re.I)
 HOURS_BLOCK = re.compile(r"\b(?:lobby|drive-up)\b.*" + TIME_OF_DAY.pattern, re.I | re.S)
 SCHEDULE_START = re.compile(r"\b(?:lobby|drive-up)\b", re.I)
@@ -199,6 +201,7 @@ def split_into_blocks(markdown: str) -> list[str]:
 
 class PassageIndex:
     def __init__(self, pages: list, taken_on: str) -> None:
+        self._taken_on = taken_on
         self._passages: list[Passage] = []
         self._postings: dict[str, list[int]] = defaultdict(list)
         self._document_frequency: Counter = Counter()
@@ -332,7 +335,10 @@ class PassageIndex:
         if shape in (ADDRESS, ROUTING_NUMBER):
             value = shape.search(best.text).group(0)
             return Found(value + ".", self._pages_stating(value, best), best.text)
-        return _answer_from_page(question, best, self._passages_of[best.url], names, shape)
+        found = _answer_from_page(question, best, self._passages_of[best.url], names, shape)
+        if found and shape is DATE_OR_YEAR and FUTURE_ASKED.search(question) and self._has_passed(found.text):
+            return replace(found, text=f"That date has passed: {found.text}")
+        return found
 
     def _date_of_an_unnamed_branch(
         self, question: str, terms: set[str], ranked: list[tuple[float, Passage]]
@@ -347,11 +353,23 @@ class PassageIndex:
         if not by_page:
             return None
         pages = list(by_page.values())[:SCHEDULES_IN_AN_ANSWER]
+        if FUTURE_ASKED.search(question):
+            upcoming = [page for page in pages if not self._has_passed(self._date_on_page(question, page).text)]
+            if not upcoming:
+                earlier = " | ".join(f"{_title_of(page)}: {self._date_on_page(question, page).text}" for page in pages)
+                return Found(f"The site shows nothing upcoming. Earlier: {earlier}", tuple(p.url for p in pages), pages[0].text)
+            pages = upcoming
         if len(pages) > 1:
             titles = " | ".join(_title_of(passage) for passage in pages)
-            return Found(f"That depends on the branch; which branch do you need? {titles}", tuple(by_page), pages[0].text)
-        found = _answer_from_page(question, pages[0], self._passages_of[pages[0].url], set(), DATE_OR_YEAR)
-        return found and Found(f"{_title_of(pages[0])}: {found.text}", found.urls, found.quote)
+            return Found(f"That depends on the branch; which branch do you need? {titles}", tuple(p.url for p in pages), pages[0].text)
+        found = self._date_on_page(question, pages[0])
+        return Found(f"{_title_of(pages[0])}: {found.text}", found.urls, found.quote)
+
+    def _date_on_page(self, question: str, passage: Passage) -> Found:
+        return _answer_from_page(question, passage, self._passages_of[passage.url], set(), DATE_OR_YEAR)
+
+    def _has_passed(self, sentence: str) -> bool:
+        return _latest_date_in(sentence) < self._taken_on
 
     def _most_stated_count(
         self, question: str, ranked: list[tuple[float, Passage]], shape: re.Pattern
@@ -498,6 +516,11 @@ def _sentence_stating_the_date(question: str, sentences: list[str], names: set[s
         return len((terms - names) & words), len(terms & words), bool(FULL_DATE.search(sentence))
 
     return max(sentences, key=strength)
+
+
+def _latest_date_in(sentence: str) -> str:
+    full_dates = [f"{year}-{MONTH_NUMBERS[month]:02d}-{int(day):02d}" for month, day, year in FULL_DATE.findall(sentence)]
+    return max(full_dates) if full_dates else f"{max(BARE_YEAR.findall(sentence))}-12-31"
 
 
 def _through_the_date(sentence: str) -> str:
