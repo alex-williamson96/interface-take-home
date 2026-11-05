@@ -123,11 +123,16 @@ class RewordingsAgainstRealSnapshots(unittest.TestCase):
         for question, opening in (
             ("Is the Hy-Vee branch still open today (October 2026)?", "No. "),
             ("Is the Asbury branch still open?", "No. "),
-            ("When does the Hy-Vee branch close?", "That date has passed: "),
-            ("When will the Hy-Vee branch close?", "That date has passed: "),
+            ("When does the Hy-Vee branch close?", "March 31, 2026 has passed. The site said: "),
+            ("When will the Hy-Vee branch close?", "March 31, 2026 has passed. The site said: "),
         ):
             with self.subTest(question):
                 self.assertTrue(self.system.answer(question).text.startswith(opening))
+
+    def test_the_annual_meeting_is_given_as_the_most_recent_one(self):
+        answer = self.system.answer("When is the Dupaco annual meeting?").text
+        self.assertTrue(answer.startswith("Most recently: "), answer)
+        self.assertIn("held Tuesday, February 24, 2026", answer)
 
     def test_when_a_branch_opens_is_answered_with_hours(self):
         self.assertTrue(self.system.answer("When does the branch open?").text.startswith("Hours vary by branch"))

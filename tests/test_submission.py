@@ -194,14 +194,29 @@ class AnswersFromPageText(unittest.TestCase):
     def test_a_will_question_about_a_date_already_past_says_so(self):
         page = article("June 1, 2025", "The Galena branch will close March 31, 2026.")
         system = system_with_pages((NEWS_URL + "a", page))
-        self.assertEqual(system.answer("When will the Galena branch close?").text[:22], "That date has passed: ")
-        self.assertEqual(system.answer("When does the Galena branch close?").text[:22], "That date has passed: ")
+        said = "March 31, 2026 has passed. The site said: "
+        self.assertTrue(system.answer("When will the Galena branch close?").text.startswith(said))
+        self.assertTrue(system.answer("When does the Galena branch close?").text.startswith(said))
         self.assertNotIn("passed", system.answer("When did the Galena branch close?").text)
 
     def test_a_date_sentence_sharing_only_the_name_does_not_answer_what_was_asked(self):
         page = article("June 1, 2026", "The Hoefer Foundation was established in 2011.")
         answer = system_with_pages((NEWS_URL + "a", page)).answer("When does the Hoefer Foundation scholarship application open?")
         self.assertFalse(answer.confident)
+
+    def test_a_present_tense_question_about_a_past_event_gets_the_latest_as_most_recent(self):
+        older = article("June 1, 2021", "The Galena branch ribbon cutting was held June 1, 2021.")
+        newer = article("June 1, 2024", "The Galena branch ribbon cutting was held June 1, 2024.")
+        answer = system_with_pages((NEWS_URL + "a", older), (NEWS_URL + "b", newer)).answer("When is the Galena branch ribbon cutting?").text
+        self.assertIn("Most recently: ", answer)
+        self.assertIn("June 1, 2024", answer)
+        self.assertNotIn("2021", answer)
+
+    def test_most_recent_skips_a_later_date_still_written_as_ahead(self):
+        held = article("June 3, 2024", "The Galena branch ribbon cutting was held June 1, 2024.")
+        recording = article("June 2, 2024", "The Galena branch ribbon cutting recording will be online June 9, 2024.")
+        system = system_with_pages((NEWS_URL + "a", held), (NEWS_URL + "b", recording))
+        self.assertIn("was held June 1, 2024", system.answer("When is the Galena branch ribbon cutting?").text)
 
     def test_which_branch_leaves_out_a_page_with_no_date_about_what_was_asked(self):
         system = KnowledgeSystem()

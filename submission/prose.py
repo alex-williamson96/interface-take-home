@@ -86,6 +86,7 @@ FULL_DATE = re.compile(rf"\b({'|'.join(MONTH_NUMBERS)})[a-z]*\.? (\d{{1,2}}), (2
 BARE_YEAR = re.compile(r"\b(?:19|20)\d\d\b")
 STILL_AHEAD_ASKED = re.compile(r"\bwill\b|\bgoing to\b|\b(?:does|do|is|are)\b", re.I)
 STILL_OPEN_ASKED = re.compile(r"^\s*(?:is|are)\s+(.+?)\s+still open\b", re.I)
+AHEAD_NOT_NOW_ASKED = re.compile(r"\bwill\b|\bgoing to\b", re.I)
 WRITTEN_AS_STILL_AHEAD = re.compile(r"\b(?:will|plans?|planned|expected|scheduled)\b", re.I)
 CLOSING_STATED = re.compile(r"\bclos(?:e|es|ed|ing|ure)\b|\blast day\b", re.I)
 TIME_OF_DAY = re.compile(r"\d(?::\d\d)?\s*[ap]\.?m\b", re.I)
@@ -351,8 +352,12 @@ class PassageIndex:
             value = shape.search(best.text).group(0)
             return Found(value + ".", self._pages_stating(value, best), best.text)
         found = _answer_from_page(question, best, self._passages_of[best.url], names, shape)
-        if found and shape is DATE_OR_YEAR and STILL_AHEAD_ASKED.search(question) and self._reads_ahead_but_passed(found.text):
-            return replace(found, text=f"That date has passed: {found.text}")
+        if not found or shape is not DATE_OR_YEAR or not STILL_AHEAD_ASKED.search(question):
+            return found
+        if self._reads_ahead_but_passed(found.text):
+            return replace(found, text=f"{_latest_date_in(found.text)[1]} has passed. The site said: {found.text}")
+        if self._has_passed(found.text) and not AHEAD_NOT_NOW_ASKED.search(question):
+            return self._most_recent_statement(question, names, ranked) or found
         return found
 
     def _date_of_an_unnamed_branch(
@@ -386,11 +391,28 @@ class PassageIndex:
     def _date_on_page(self, question: str, passage: Passage) -> Optional[Found]:
         return _answer_from_page(question, passage, self._passages_of[passage.url], set(), DATE_OR_YEAR)
 
+    def _most_recent_statement(self, question: str, names: set[str], ranked: list[tuple[float, Passage]]) -> Optional[Found]:
+        asked = _search_terms(question) - names
+        statements = [
+            (sentence, passage)
+            for _, passage in ranked
+            for sentence in SENTENCE_END.split(passage.display)
+            if DATE_OR_YEAR.search(sentence)
+            and not sentence.endswith("?")
+            and _mentions(sentence, asked)
+            and not self._reads_ahead_but_passed(sentence)
+        ]
+        if not statements:
+            return None
+        sentence, passage = max(statements, key=lambda statement: _latest_date_in(statement[0])[0])
+        lead = "Most recently: " if self._has_passed(sentence) else ""
+        return Found(lead + _through_the_date(sentence), (passage.url,), passage.text)
+
     def _reads_ahead_but_passed(self, sentence: str) -> bool:
         return bool(WRITTEN_AS_STILL_AHEAD.search(sentence)) and self._has_passed(sentence)
 
     def _has_passed(self, sentence: str) -> bool:
-        return _latest_date_in(sentence) < self._taken_on
+        return _latest_date_in(sentence)[0] < self._taken_on
 
     def _most_stated_count(
         self, question: str, ranked: list[tuple[float, Passage]], shape: re.Pattern
@@ -539,9 +561,15 @@ def _sentence_stating_the_date(question: str, sentences: list[str], names: set[s
     return max(sentences, key=strength)
 
 
-def _latest_date_in(sentence: str) -> str:
-    full_dates = [f"{year}-{MONTH_NUMBERS[month]:02d}-{int(day):02d}" for month, day, year in FULL_DATE.findall(sentence)]
-    return max(full_dates) if full_dates else f"{max(BARE_YEAR.findall(sentence))}-12-31"
+def _latest_date_in(sentence: str) -> tuple[str, str]:
+    full_dates = [
+        (f"{found.group(3)}-{MONTH_NUMBERS[found.group(1)]:02d}-{int(found.group(2)):02d}", found.group(0))
+        for found in FULL_DATE.finditer(sentence)
+    ]
+    if full_dates:
+        return max(full_dates)
+    year = max(BARE_YEAR.findall(sentence))
+    return f"{year}-12-31", year
 
 
 def _mentions(sentence: str, asked: set[str]) -> bool:
