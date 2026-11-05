@@ -198,6 +198,18 @@ class AnswersFromPageText(unittest.TestCase):
         self.assertEqual(system.answer("When does the Galena branch close?").text[:22], "That date has passed: ")
         self.assertNotIn("passed", system.answer("When did the Galena branch close?").text)
 
+    def test_a_date_sentence_sharing_only_the_name_does_not_answer_what_was_asked(self):
+        page = article("June 1, 2026", "The Hoefer Foundation was established in 2011.")
+        answer = system_with_pages((NEWS_URL + "a", page)).answer("When does the Hoefer Foundation scholarship application open?")
+        self.assertFalse(answer.confident)
+
+    def test_which_branch_leaves_out_a_page_with_no_date_about_what_was_asked(self):
+        system = KnowledgeSystem()
+        system.ingest(Snapshot("s", "2026-09-28", [
+            Page(NEWS_URL + "a", "Galena branch closing", article("June 1, 2026", "Our Galena team began work in 2020."), "2026-09-28"),
+        ]))
+        self.assertFalse(system.answer("When did the branch close?").confident)
+
     def test_a_sentence_already_in_the_past_tense_is_not_told_its_date_has_passed(self):
         page = article("June 1, 2021", "The Galena branch ribbon cutting was held June 1, 2021.")
         answer = system_with_pages((NEWS_URL + "a", page)).answer("When is the Galena branch ribbon cutting?").text

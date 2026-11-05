@@ -368,19 +368,22 @@ class PassageIndex:
         if not by_page:
             return None
         pages = list(by_page.values())[:SCHEDULES_IN_AN_ANSWER]
+        dated = [(page, found) for page in pages if (found := self._date_on_page(question, page))]
+        if not dated:
+            return None
         if STILL_AHEAD_ASKED.search(question):
-            upcoming = [page for page in pages if not self._has_passed(self._date_on_page(question, page).text)]
+            upcoming = [(page, found) for page, found in dated if not self._has_passed(found.text)]
             if not upcoming:
-                earlier = " | ".join(f"{_title_of(page)}: {self._date_on_page(question, page).text}" for page in pages)
-                return Found(f"The site shows nothing upcoming. Earlier: {earlier}", tuple(p.url for p in pages), pages[0].text)
-            pages = upcoming
-        if len(pages) > 1:
-            titles = " | ".join(_title_of(passage) for passage in pages)
-            return Found(f"That depends on the branch; which branch do you need? {titles}", tuple(p.url for p in pages), pages[0].text)
-        found = self._date_on_page(question, pages[0])
-        return Found(f"{_title_of(pages[0])}: {found.text}", found.urls, found.quote)
+                earlier = " | ".join(f"{_title_of(page)}: {found.text}" for page, found in dated)
+                return Found(f"The site shows nothing upcoming. Earlier: {earlier}", tuple(p.url for p, _ in dated), dated[0][0].text)
+            dated = upcoming
+        if len(dated) > 1:
+            titles = " | ".join(_title_of(page) for page, _ in dated)
+            return Found(f"That depends on the branch; which branch do you need? {titles}", tuple(p.url for p, _ in dated), dated[0][0].text)
+        page, found = dated[0]
+        return Found(f"{_title_of(page)}: {found.text}", found.urls, found.quote)
 
-    def _date_on_page(self, question: str, passage: Passage) -> Found:
+    def _date_on_page(self, question: str, passage: Passage) -> Optional[Found]:
         return _answer_from_page(question, passage, self._passages_of[passage.url], set(), DATE_OR_YEAR)
 
     def _reads_ahead_but_passed(self, sentence: str) -> bool:
@@ -541,6 +544,10 @@ def _latest_date_in(sentence: str) -> str:
     return max(full_dates) if full_dates else f"{max(BARE_YEAR.findall(sentence))}-12-31"
 
 
+def _mentions(sentence: str, asked: set[str]) -> bool:
+    return not asked or bool(asked & set(words_in(sentence)))
+
+
 def _through_the_date(sentence: str) -> str:
     end_of_date = [found.end() for found in DATE_OR_YEAR.finditer(sentence)][-1]
     clause_break = CLAUSE_BREAK.search(sentence, end_of_date)
@@ -564,6 +571,8 @@ def _answer_from_page(
         return None
     if shape is DATE_OR_YEAR:
         sentence = _sentence_stating_the_date(question, list(passage_of), names)
+        if not _mentions(sentence, _search_terms(question) - names):
+            return None
         return Found(_through_the_date(sentence), (best.url,), passage_of[sentence].text)
     worth_keeping = [s for s in passage_of if overlap[s] >= best_overlap * LOWEST_SHARE_OF_BEST_SENTENCE_KEPT]
     kept = set(sorted(worth_keeping, key=lambda s: overlap[s], reverse=True)[:SENTENCES_IN_AN_ANSWER])

@@ -46,6 +46,7 @@ NOTHING_ON_THE_SITE_ANSWERS_THESE = (
     "What is the address of the Chicago branch?",
     "What's the routing number for Chase?",
     "When did Dupaco open its first branch?",
+    "When does the Dupaco Foundation scholarship application open?",
     "Who won the Super Bowl?",
     "Tell me a joke",
 )
