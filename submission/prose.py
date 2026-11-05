@@ -72,11 +72,12 @@ BUSINESS_ROW = re.compile(r"\bbusiness\b", re.I)
 FEE_ROWS_IN_AN_ANSWER = 4
 HOURS_ASKED = re.compile(r"\bhours?\b", re.I)
 OPENING_TIME_ASKED = re.compile(r"\bwhen (?:does|do|is)\b.*\b(?:branch(?:es)?|lobby|drive-up)\b.*\bopen\b", re.I)
+TIME_OF_DAY_ASKED = re.compile(r"\bwhat time\b.*\b(?:open|close)\b", re.I)
 CLOSING_TIME_ASKED = re.compile(r"\bwhen (?:does|do|is)\b.*\b(?:branch(?:es)?|lobby|drive-up)\b.*\bclose\b", re.I)
 A_BRANCH_ASKED_ABOUT = re.compile(r"\b(?:branch(?:es)?|locations?)\b", re.I)
 FIRST_OR_LAST_OF_A_KIND = re.compile(r"\b(?:first|last|oldest|newest|original)\s+[a-z]+", re.I)
 BYLINE = re.compile(r"Written by .*?\|\s*([A-Z][a-z]{2}) (\d{1,2}), (\d{4}) [\d:]+ [AP]M")
-DATE_ASKED = re.compile(r"\bwhen\b|\b(?:what|which) (?:date|year)\b|\bstill open\b", re.I)
+DATE_ASKED = re.compile(r"\bwhen\b|\b(?:what|which) (?:date|year)s?\b|\bdeadline\b|\bstill open\b", re.I)
 ADDRESS_ASKED = re.compile(r"\baddress\b", re.I)
 ATM_ASKED = re.compile(r"\batms?\b", re.I)
 DUPACO_BRANCH_LISTING = re.compile(r"\bDupaco Branch\b")
@@ -103,6 +104,10 @@ CHARTER_AREA = re.compile(r"\bcharter area\b", re.I)
 STATES_SERVED = re.compile(r"\bIowa\b.*\bIllinois\b.*\bWisconsin\b")
 BRANCH_COUNT = re.compile(r"(?<![\d,])\b(\d{1,3}) (?:\w+ )?branch(?:es)?\b", re.I)
 FULL_DATE = re.compile(rf"\b({'|'.join(MONTH_NUMBERS)})[a-z]*\.? (\d{{1,2}}), (20\d\d)\b")
+MONTH_AND_YEAR = re.compile(rf"\b({'|'.join(MONTH_NUMBERS)})[a-z]*\.? (20\d\d)\b")
+EARLY_IN_A_YEAR = re.compile(r"\bearly (20\d\d)\b")
+LAST_DAY_OF_ANY_MONTH = 31
+END_OF_EARLY_IN_A_YEAR = "03-31"
 BARE_YEAR = re.compile(r"\b(?:19|20)\d\d\b")
 STILL_AHEAD_ASKED = re.compile(r"\bwill\b|\bgoing to\b|\b(?:does|do|is|are)\b", re.I)
 STILL_OPEN_ASKED = re.compile(
@@ -177,6 +182,7 @@ def words_in(text: str) -> list[str]:
 WORDS_THAT_DO_NOT_SEARCH = frozenset(words_in(WORDS_THAT_DO_NOT_SEARCH_TEXT))
 WORDS_A_SHAPE_ALREADY_SATISFIES = frozenset(words_in("address phone number year date"))
 WORDS_ANY_BRANCH_SHARES = frozenset(words_in("branch location"))
+WORDS_THAT_ONLY_ASK_WHEN = frozenset(words_in("next hold held"))
 MEMBER = stem("member")
 COUNTED_AS_BRANCHES = frozenset(stem(word) for word in ("location", "office"))
 WORDS_IN_DUPACOS_OWN_NAME = frozenset(words_in("community credit union"))
@@ -411,6 +417,8 @@ class PassageIndex:
         terms = _search_terms(question) - (WORDS_A_SHAPE_ALREADY_SATISFIES if shape else frozenset())
         if shape is ROUTING_NUMBER:
             terms = WORDS_ROUTING_IS_FOUND_BY
+        if shape is DATE_OR_YEAR:
+            terms = terms - WORDS_THAT_ONLY_ASK_WHEN
         ranked = self._ranked(terms, names, shape, fewest_body_matches)
         if shape is ADDRESS and not ATM_ASKED.search(question):
             ranked = [scored for scored in ranked if DUPACO_BRANCH_LISTING.search(scored[1].text)]
@@ -437,6 +445,9 @@ class PassageIndex:
         if not found or shape is not DATE_OR_YEAR or not STILL_AHEAD_ASKED.search(question):
             return found
         if self._reads_ahead_but_passed(found.text):
+            newer = self._most_recent_statement(question, names, ranked)
+            if newer and _latest_date_in(newer.text)[0] > _latest_date_in(found.text)[0]:
+                return newer
             return replace(found, text=f"{_latest_date_in(found.text)[1]} has passed. The site said: {found.text}")
         if self._has_passed(found.text) and not AHEAD_NOT_NOW_ASKED.search(question):
             return self._most_recent_statement(question, names, ranked) or found
@@ -617,7 +628,12 @@ def _schedule_key(passage: Passage) -> str:
 
 def _asks_when_a_branch_is_open(question: str, names: set[str]) -> bool:
     closing_time = not names and CLOSING_TIME_ASKED.search(question)
-    return bool(HOURS_ASKED.search(question) or OPENING_TIME_ASKED.search(question) or closing_time)
+    return bool(
+        HOURS_ASKED.search(question)
+        or OPENING_TIME_ASKED.search(question)
+        or TIME_OF_DAY_ASKED.search(question)
+        or closing_time
+    )
 
 
 def _stating_any_first_or_last_asked_about(
@@ -697,12 +713,21 @@ def _latest_date_in(sentence: str) -> tuple[str, str]:
     ]
     if full_dates:
         return max(full_dates)
+    months = [
+        (f"{found.group(2)}-{MONTH_NUMBERS[found.group(1)]:02d}-{LAST_DAY_OF_ANY_MONTH}", found.group(0))
+        for found in MONTH_AND_YEAR.finditer(sentence)
+    ]
+    if months:
+        return max(months)
+    early = [(f"{found.group(1)}-{END_OF_EARLY_IN_A_YEAR}", found.group(0)) for found in EARLY_IN_A_YEAR.finditer(sentence)]
+    if early:
+        return max(early)
     year = max(BARE_YEAR.findall(sentence))
     return f"{year}-12-31", year
 
 
 def _asked_beyond_the_name(question: str, names: set[str]) -> set[str]:
-    return _search_terms(question) - names - WORDS_A_SHAPE_ALREADY_SATISFIES - WORDS_ANY_BRANCH_SHARES
+    return _search_terms(question) - names - WORDS_A_SHAPE_ALREADY_SATISFIES - WORDS_ANY_BRANCH_SHARES - WORDS_THAT_ONLY_ASK_WHEN
 
 
 def _mentions(sentence: str, asked: set[str]) -> bool:

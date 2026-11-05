@@ -16,7 +16,7 @@ from question import (
     parse_rate_question,
     search_may_answer,
 )
-from rate_facts import RateFact, extract_rate_facts, extract_table_facts, page_path, stem
+from rate_facts import RateFact, classify_family, extract_rate_facts, extract_table_facts, page_path, stem
 
 REFUSAL_TEXT = "I can't confirm that from the website. Please contact Dupaco."
 JUMBO = stem("jumbo")
@@ -112,7 +112,10 @@ def _link_answer(question: str, snapshot: IndexedSnapshot) -> Optional[Found]:
     )
     if not product_pages:
         return snapshot.passages.link_for(question)
-    page = product_pages.most_common(1)[0][0]
+    def named_for_the_family(url: str) -> bool:
+        return classify_family(page_path(url).replace("-", " ").replace("/", " ")) == family
+
+    page = max(product_pages, key=lambda url: (product_pages[url], named_for_the_family(url)))
     return Found(page, (page,), page)
 
 

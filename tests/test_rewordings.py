@@ -112,6 +112,10 @@ FEES_AND_LIMITS_THE_SITE_DOES_NOT_STATE = (
     "Can I pay my mortgage at a branch?",
 )
 
+NEWEST_DATE_NOT_AN_OLD_ONE = (
+    ("When will Dupaco hold its next annual meeting?", "February 24, 2026", "2022"),
+)
+
 COUNTS_THE_SITE_STATES = (
     ("How many locations does Dupaco have?", "22"),
     ("How many Dupaco locations are there?", "22"),
@@ -219,6 +223,19 @@ class RewordingsAgainstRealSnapshots(unittest.TestCase):
 
     def test_a_how_do_i_question_about_rewards_is_answered_not_refused(self):
         self.assertIn("earn points", self.system.answer("How do I earn rewards with my Visa?").text)
+
+    def test_a_will_question_prefers_the_newest_statement_to_an_old_one_written_as_ahead(self):
+        for question, newest, older in NEWEST_DATE_NOT_AN_OLD_ONE:
+            with self.subTest(question):
+                answer = self.system.answer(question).text
+                self.assertIn(newest, answer)
+                self.assertNotIn(older, answer)
+
+    def test_a_link_to_mortgage_rates_is_the_home_loan_page(self):
+        self.assertIn("/personal/loans/home-loans", self.system.answer("What is the link for mortgage rates?").text)
+
+    def test_a_what_time_question_about_a_branch_without_hours_is_refused(self):
+        self.assertFalse(self.system.answer("What time does the Key West branch close?").confident)
 
     def test_a_count_is_the_newest_dupaco_states_about_itself(self):
         for question, count in COUNTS_THE_SITE_STATES:

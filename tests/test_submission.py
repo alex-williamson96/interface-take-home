@@ -225,6 +225,13 @@ class AnswersFromPageText(unittest.TestCase):
         ]))
         self.assertFalse(system.answer("When did the branch close?").confident)
 
+    def test_a_month_or_early_in_the_current_year_counts_as_passed_once_it_has(self):
+        for when in ("April 2026", "early 2026"):
+            with self.subTest(when):
+                page = article("June 1, 2025", f"The Galena branch ribbon cutting will be held in {when}.")
+                answer = system_with_pages((NEWS_URL + "a", page)).answer("When will the Galena branch ribbon cutting be held?").text
+                self.assertTrue(answer.startswith(f"{when} has passed."), answer)
+
     def test_a_sentence_already_in_the_past_tense_is_not_told_its_date_has_passed(self):
         page = article("June 1, 2021", "The Galena branch ribbon cutting was held June 1, 2021.")
         answer = system_with_pages((NEWS_URL + "a", page)).answer("When is the Galena branch ribbon cutting?").text
