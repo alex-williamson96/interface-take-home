@@ -61,6 +61,7 @@ WORDS_THAT_DO_NOT_SEARCH_TEXT = """
 
 LOCATOR_PATH = "/contact"
 HOURS_ASKED = re.compile(r"\bhours?\b", re.I)
+A_BRANCH_ASKED_ABOUT = re.compile(r"\b(?:branch(?:es)?|locations?)\b", re.I)
 DATE_ASKED = re.compile(r"\bwhen\b|\bwhat date\b|\bstill open\b", re.I)
 ADDRESS_ASKED = re.compile(r"\baddress\b", re.I)
 ROUTING_ASKED = re.compile(r"\brouting\b", re.I)
@@ -268,12 +269,12 @@ class PassageIndex:
         return ranked
 
     def search(self, question: str) -> Optional[Found]:
+        names = _names_in(question)
         if HOURS_ASKED.search(question):
             return self._hours(question)
         shape = _shape_asked_for(question)
         fewest_body_matches = 1 if shape else FEWEST_MATCHED_TERMS_WITHOUT_A_TITLE_MATCH
         terms = _search_terms(question) - (WORDS_A_SHAPE_ALREADY_SATISFIES if shape else frozenset())
-        names = _names_in(question)
         ranked = self._ranked(terms, names, shape, fewest_body_matches)
         if shape is PHONE:
             return self._phone_answer(ranked, terms)
@@ -281,11 +282,32 @@ class PassageIndex:
             return None
         if COUNTED_THING.search(question):
             return self._most_stated_count(question, ranked, shape)
+        if shape is DATE_OR_YEAR:
+            if not names and A_BRANCH_ASKED_ABOUT.search(question):
+                return self._date_of_an_unnamed_branch(question, terms, ranked)
         best = _newest_among_the_tied(ranked)
         if shape in (ADDRESS, ROUTING_NUMBER):
             value = shape.search(best.text).group(0)
             return Found(value + ".", self._pages_stating(value, best), best.text)
         return _answer_from_page(question, best, self._passages_of[best.url], names, shape)
+
+    def _date_of_an_unnamed_branch(
+        self, question: str, terms: set[str], ranked: list[tuple[float, Passage]]
+    ) -> Optional[Found]:
+        stating_it = [
+            passage
+            for _, passage in ranked
+            if terms <= passage.searchable_words and passage.trust > TRUST_OF_LEAST_TRUSTED
+        ]
+        by_page = {passage.url: passage for passage in reversed(stating_it)}
+        if not by_page:
+            return None
+        pages = list(by_page.values())[:SCHEDULES_IN_AN_ANSWER]
+        if len(pages) > 1:
+            titles = " | ".join(_title_of(passage) for passage in pages)
+            return Found(f"That depends on the branch; which branch do you need? {titles}", tuple(by_page), pages[0].text)
+        found = _answer_from_page(question, pages[0], self._passages_of[pages[0].url], set(), DATE_OR_YEAR)
+        return found and Found(f"{_title_of(pages[0])}: {found.text}", found.urls, found.quote)
 
     def _most_stated_count(
         self, question: str, ranked: list[tuple[float, Passage]], shape: re.Pattern
@@ -334,7 +356,7 @@ class PassageIndex:
         if names or len(chosen) == 1:
             return Found(_schedule_of(chosen[0]), (chosen[0].url,), chosen[0].text)
         chosen = chosen[:SCHEDULES_IN_AN_ANSWER]
-        listed = " | ".join(f"{TITLE_SITE_SUFFIX.sub('', p.title)}: {_schedule_of(p)}" for p in chosen)
+        listed = " | ".join(f"{_title_of(p)}: {_schedule_of(p)}" for p in chosen)
         cited = tuple(dict.fromkeys((self._locator_url(), chosen[0].url)))
         return Found(f"Hours vary by branch; which branch do you need? {listed}", tuple(u for u in cited if u), chosen[0].text)
 
@@ -355,6 +377,10 @@ class PassageIndex:
             return None
         page = votes.most_common(1)[0][0]
         return Found(page, (page,), labels[page])
+
+
+def _title_of(passage: Passage) -> str:
+    return TITLE_SITE_SUFFIX.sub("", passage.title)
 
 
 def _schedule_of(passage: Passage) -> str:

@@ -186,6 +186,18 @@ class AnswersFromPageText(unittest.TestCase):
         answer = system_with_pages((NEWS_URL + "a", page)).answer("When will the branch close?").text
         self.assertEqual(("Galena" in answer) + ("Asbury" in answer), 1, answer)
 
+    def test_a_date_question_about_an_unnamed_branch_asks_which_when_pages_differ(self):
+        closing = article("June 1, 2026", "This branch will close on {}.")
+        system = KnowledgeSystem()
+        system.ingest(Snapshot("s", "2026-09-28", [
+            Page(NEWS_URL + "a", "Galena branch closing | Dupaco", closing.format("March 31, 2026"), "2026-09-28"),
+            Page(NEWS_URL + "b", "Asbury branch closing | Dupaco", closing.format("Oct. 1, 2024"), "2026-09-28"),
+        ]))
+        answer = system.answer("When will the branch close?").text
+        self.assertIn("which branch", answer)
+        self.assertIn("Galena branch closing", answer)
+        self.assertIn("Asbury branch closing", answer)
+
     def test_a_question_naming_nothing_can_answer_from_elsewhere_on_the_page_and_quotes_it(self):
         page = article(
             "June 1, 2026",
