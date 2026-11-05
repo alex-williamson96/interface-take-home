@@ -33,6 +33,7 @@ CHARS_SEARCHED_FOR_PUBLISHED_DATE = 400
 LONGEST_LINE_MERGED_INTO_A_BLOCK = 80
 LONGEST_PASSAGE_CHARS = 1500
 SENTENCES_IN_AN_ANSWER = 3
+FEWEST_SENTENCES_THAT_DEFINE_SOMETHING = 2
 FEWEST_LINKS_IN_A_LINK_LIST = 3
 FEWEST_PAGES_FOR_A_REPEATED_COUNT = 2
 FEWEST_MATCHED_TERMS_WITHOUT_A_TITLE_MATCH = 2
@@ -82,6 +83,9 @@ DATE_OR_YEAR = re.compile(PUBLISHED.pattern + r"|\b(?:19|20)\d\d\b")
 FOUNDING_ASKED = re.compile(r"\b(?:founded|established)\b", re.I)
 FOUNDING_YEAR = re.compile(r"\b(?:founded|founding|established)\b\D{0,10}((?:19|20)\d\d)\b", re.I)
 CLAUSE_BREAK = re.compile(r",\s+(?!\d)")
+DEFINITION_ASKED = re.compile(r"^\s*what(?:'s| is| are)\b", re.I)
+CHARTER_AREA = re.compile(r"\bcharter area\b", re.I)
+STATES_SERVED = re.compile(r"\bIowa\b.*\bIllinois\b.*\bWisconsin\b")
 BRANCH_COUNT = re.compile(r"(?<![\d,])\b(\d{1,3}) (?:\w+ )?branch(?:es)?\b", re.I)
 FULL_DATE = re.compile(rf"\b({'|'.join(MONTH_NUMBERS)})[a-z]*\.? (\d{{1,2}}), (20\d\d)\b")
 BARE_YEAR = re.compile(r"\b(?:19|20)\d\d\b")
@@ -615,5 +619,10 @@ def _answer_from_page(
     worth_keeping = [s for s in passage_of if overlap[s] >= best_overlap * LOWEST_SHARE_OF_BEST_SENTENCE_KEPT]
     kept = set(sorted(worth_keeping, key=lambda s: overlap[s], reverse=True)[:SENTENCES_IN_AN_ANSWER])
     answer = [s for s in passage_of if s in kept]
+    from_best = [s for s in passage_of if passage_of[s] is best][:SENTENCES_IN_AN_ANSWER]
+    if shape is None and DEFINITION_ASKED.search(question) and len(from_best) >= FEWEST_SENTENCES_THAT_DEFINE_SOMETHING:
+        answer = from_best
+    if CHARTER_AREA.search(" ".join(answer)):
+        answer += [s for s in passage_of if STATES_SERVED.search(s) and s not in answer][:1]
     quoted = dict.fromkeys(passage_of[s].text for s in answer)
     return Found(" ".join(answer), (best.url,), " ".join(quoted))

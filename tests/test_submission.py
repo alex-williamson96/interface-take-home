@@ -392,6 +392,19 @@ class AnswersFromPageText(unittest.TestCase):
         self.assertNotIn("8 a.m.-4 p.m.", answer)
 
 
+    def test_a_what_is_question_answers_from_the_passage_that_defines_it(self):
+        page = article(
+            "June 1, 2026",
+            "The Home$tart program helps first-time buyers. It provides up to $15,000 in assistance.\n\n# More\n\nHome$tart is popular.",
+        )
+        answer = system_with_pages((NEWS_URL + "a", page)).answer("What is the Home$tart program?").text
+        self.assertIn("$15,000", answer)
+
+    def test_a_charter_area_answer_says_which_states(self):
+        page = "You can join if you live within our charter area.\n\n# Local\n\nYou can find us in Iowa, Illinois and Wisconsin."
+        answer = system_with_pages((NEWS_URL + "a", page)).answer("Who can join if they live in the charter area?").text
+        self.assertIn("Iowa, Illinois and Wisconsin", answer)
+
 
 class Conflicts(unittest.TestCase):
     LANDING_URL = "https://www.dupaco.com/offer-lp"
