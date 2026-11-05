@@ -18,6 +18,7 @@ SHORTEST_WORD_WITH_ITS_ENDING_REMOVED = 5
 WORDS_THAT_MEAN_SOMETHING_ELSE_WITHOUT_THEIR_ENDING = frozenset({"foundation", "founded"})
 ROOTS_OF_IRREGULAR_WORDS = {
     "closure": "clos",
+    "lobbie": "lobby",
     "acquisition": "acquir",
     "completion": "complet",
     "finish": "complet",
@@ -83,8 +84,10 @@ CARD_PAGE_PATH_PART = "credit-cards"
 FOOTNOTE_AFTER_THE_AMOUNT = re.compile(r"\s+\*.*$")
 FEE_ROWS_IN_AN_ANSWER = 4
 HOURS_ASKED = re.compile(r"\bhours?\b", re.I)
-OPENING_TIME_ASKED = re.compile(r"\bwhen (?:does|do|is)\b.*\b(?:branch(?:es)?|lobby|drive-up)\b.*\bopen\b", re.I)
+OPENING_TIME_ASKED = re.compile(r"\bwhen (?:does|do|is|are)\b.*\b(?:branch(?:es)?|lobby|lobbies|drive-up)\b.*\bopen\b", re.I)
 DATE_WORDS_IN_A_FEE_QUESTION = re.compile(r"\b(?:in|on|as of)?\s*[A-Z][a-z]+\.? (?:\d{1,2},? )?20\d\d\b")
+ELIGIBILITY_ASKED = re.compile(r"^\s*who (?:can|may|could) (?:join|become a (?:dupaco )?member)\b", re.I)
+WHO_IS_ELIGIBLE = "Who is eligible to become a Dupaco member?"
 TIME_OF_DAY_ASKED = re.compile(r"\bwhat time\b.*\b(?:open|close)\b", re.I)
 CLOSING_TIME_ASKED = re.compile(r"\bwhen (?:does|do|is)\b.*\b(?:branch(?:es)?|lobby|drive-up)\b.*\bclose\b", re.I)
 A_BRANCH_ASKED_ABOUT = re.compile(r"\b(?:branch(?:es)?|locations?)\b", re.I)
@@ -407,6 +410,8 @@ class PassageIndex:
     def _search_by_kind_of_question(self, question: str) -> Optional[Found]:
         if DUPACO_ORIGIN_ASKED.search(question):
             return self._search_as_worded(WHEN_DUPACO_WAS_FOUNDED)
+        if ELIGIBILITY_ASKED.search(question):
+            return self._search_as_worded(WHO_IS_ELIGIBLE) or self._search_as_worded(question)
         if COUNTED_THING.search(question):
             question = FULL_SERVICE.sub(" ", question)
         closes = WHEN_IT_CLOSES_ASKED.search(question)
@@ -504,6 +509,9 @@ class PassageIndex:
             value = shape.search(best.text).group(0)
             return Found(value + ".", self._pages_stating(value, best), best.text)
         passages_to_try = _dated_passages_to_try(best, terms, ranked) if shape is DATE_OR_YEAR else [best]
+        if shape is None and DEFINITION_ASKED.search(question):
+            best = _first_on_its_page_among_the_tied(best, ranked, self._passages_of[best.url])
+            passages_to_try = [best]
         found = next(
             (
                 answer
@@ -811,6 +819,11 @@ def _tied_for_the_top(ranked: list[tuple[float, Passage]]) -> list[Passage]:
 
 def _newest_among_the_tied(ranked: list[tuple[float, Passage]]) -> Passage:
     return max(_tied_for_the_top(ranked), key=lambda passage: passage.published)
+
+
+def _first_on_its_page_among_the_tied(best: Passage, ranked: list[tuple[float, Passage]], page: list[Passage]) -> Passage:
+    tied = _tied_for_the_top(ranked)
+    return next((passage for passage in page if passage in tied), best)
 
 
 def _dated_passages_to_try(best: Passage, terms: set[str], ranked: list[tuple[float, Passage]]) -> list[Passage]:

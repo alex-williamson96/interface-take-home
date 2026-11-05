@@ -13,6 +13,8 @@ from question import (
     asks_a_price,
     asks_about_a_fee,
     asks_for_a_link,
+    asks_what_changed,
+    date_in_the_words,
     family_of_rates_asked_about,
     parse_rate_question,
     search_may_answer,
@@ -54,15 +56,17 @@ class KnowledgeSystem:
         )
 
     def answer(self, question: str, as_of: Optional[str] = None) -> Answer:
-        snapshot = self._snapshot_for(as_of)
+        parsed = parse_rate_question(question)
+        snapshot = self._snapshot_for(as_of or (date_in_the_words(question) if parsed else None))
         if snapshot is None:
             return refusal()
-        parsed = parse_rate_question(question)
         if parsed is None:
             return _answer_from_search(question, snapshot)
         selected = select_facts(parsed, snapshot.facts)
         if not selected:
             return refusal()
+        if asks_what_changed(question):
+            return self._answer_about_what_changed(parsed, selected, snapshot)
         return Answer(
             text=render_answer(parsed, selected),
             sources=cite(selected, snapshot),
@@ -79,9 +83,29 @@ class KnowledgeSystem:
         )
         return found + [conflict for conflict in statements_that_disagree if conflict]
 
+    def _answer_about_what_changed(self, question: RateQuestion, selected: list[RateFact], snapshot: IndexedSnapshot) -> Answer:
+        current = {_same_tier_over_time(fact): fact for fact in selected}
+        earlier: dict[tuple, tuple[RateFact, str]] = {}
+        for older in reversed([s for s in self._snapshots if s.taken_on < snapshot.taken_on]):
+            for fact in select_facts(question, older.facts):
+                tier = _same_tier_over_time(fact)
+                if tier in current and tier not in earlier and fact.values != current[tier].values:
+                    earlier[tier] = (fact, older.taken_on)
+        if not earlier:
+            return Answer(text=f"No change across the snapshots. {render_answer(question, selected)}", sources=cite(selected, snapshot))
+        changes = "; ".join(
+            f"{current[tier].name}: {_render_values(question, fact)} on {taken_on}, now {_render_values(question, current[tier])}"
+            for tier, (fact, taken_on) in earlier.items()
+        )
+        return Answer(text=f"It changed. {changes}.", sources=cite([current[tier] for tier in earlier], snapshot))
+
     def _snapshot_for(self, as_of: Optional[str]) -> Optional[IndexedSnapshot]:
         eligible = [s for s in self._snapshots if as_of is None or s.taken_on <= as_of]
         return eligible[-1] if eligible else None
+
+
+def _same_tier_over_time(fact: RateFact) -> tuple:
+    return fact.family, fact.business, fact.term_months, fact.amount_range, fact.model_years, JUMBO in fact.words
 
 
 def refusal() -> Answer:

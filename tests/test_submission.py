@@ -622,7 +622,7 @@ class AnswerBehaviour(unittest.TestCase):
 | --- | --- | --- |
 | 2017-20 Model Year | 60 Months | 6.34% APR |
 """
-        system.ingest(snapshot("2026-09-28", (RATES_URL, sheet)))
+        system.ingest(snapshot("2026-05-12", (RATES_URL, sheet)))
         self.assertIn("6.34%", system.answer("What was the 60-month auto rate in May 2026?").text)
 
     def test_refinance_question_gets_the_refinance_row_not_the_purchase_row(self):

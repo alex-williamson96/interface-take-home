@@ -36,7 +36,18 @@ CALENDAR_DATE = re.compile(
     r"|\b(?:as of|in|during)\s+20\d\d\b(?!\s+(?:model|vehicle|car|truck))",
     re.I,
 )
-LINK_INTENT = re.compile(r"\b(link|url|website|web page|webpage)\b", re.I)
+LINK_INTENT = re.compile(r"\b(link|url|website|web page|webpage|(?:which|what) page)\b", re.I)
+MONTH_NUMBERS_BY_NAME = {
+    name: number
+    for number, name in enumerate("jan feb mar apr may jun jul aug sep oct nov dec".split(), start=1)
+}
+DATE_IN_WORDS = re.compile(r"\b(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\.?\s+(?:(\d{1,2}),?\s+)?(20\d\d)\b(?!\s*-)")
+LAST_DAY_OF_ANY_MONTH = 31
+CHANGE_ASKED = re.compile(
+    r"\bused to\b|\bprevious(?:ly)?\b|\bchanged?\b|\b(?:gone|go|went) (?:up|down)\b|\b(?:was|were) (?:it|they) before\b"
+    r"|\bold(?:er)? (?:rate|apy|apr)\b",
+    re.I,
+)
 HOW_TO_ASKED = re.compile(r"\bhow (do|can|should) (i|we)\b|\bhow to\b", re.I)
 DIVIDEND_ASKED = re.compile(r"\bdividends?\b", re.I)
 BUSINESS_ASKED = re.compile(r"\bbusiness\b", re.I)
@@ -92,7 +103,7 @@ FAMILY_SYNONYMS = (
     ("recreation", re.compile(r"\b(boats?|rv|rvs|atvs?|snowmobiles?|jet skis?)\b", re.I)),
     ("personal_loan", re.compile(r"personal loans?", re.I)),
     ("card", re.compile(r"\bvisa\b|credit cards?|business cards?|balance transfers?|\bplatinum\b|\brewards card\b", re.I)),
-    ("certificate", re.compile(r"\bcds?\b|certificates?|\b\d+[\s-]*months?\s+(?:fixed\s+)?special\b", re.I)),
+    ("certificate", re.compile(r"\bcds?\b|certificates?|\b\d+[\s-]*months?\s+(?:fixed\s+)?(?:jumbo\s+)?special\b", re.I)),
     ("money_market", re.compile(r"money market|investor[’']?s choice|\bachieve\b", re.I)),
     ("checking", re.compile(r"checking", re.I)),
     ("savings", re.compile(r"saving|holiday club|launchpad|you[- ]name[- ]it|high[- ]yield|\bbright\b|\bhsas?\b", re.I)),
@@ -113,6 +124,7 @@ WORDS_THAT_DO_NOT_NARROW = frozenset(
     thousand to today too top truck trying under up us used very vehicle visa want wanted was we we're were what
     whats what's when where which who will with wondering would year yet yr you you're your
     apy apr dividend yield earn earning pay paying now auto equity market motorcycle personal
+    previous previously used change changed gone went before old older
     """.split()
 )
 PRODUCT_NOUNS = frozenset(
@@ -181,6 +193,18 @@ def family_of_rates_asked_about(question: str) -> Optional[str]:
     if not RATE_INTENT.search(question):
         return None
     return _family_in(question)
+
+
+def date_in_the_words(question: str) -> Optional[str]:
+    stated = DATE_IN_WORDS.search(question)
+    if not stated:
+        return None
+    month, day, year = stated.groups()
+    return f"{year}-{MONTH_NUMBERS_BY_NAME[month.lower()]:02d}-{int(day) if day else LAST_DAY_OF_ANY_MONTH:02d}"
+
+
+def asks_what_changed(question: str) -> bool:
+    return bool(CHANGE_ASKED.search(question))
 
 
 def asks_about_a_fee(question: str) -> bool:

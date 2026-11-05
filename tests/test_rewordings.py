@@ -263,6 +263,25 @@ class RewordingsAgainstRealSnapshots(unittest.TestCase):
     def test_a_what_time_question_about_a_branch_without_hours_is_refused(self):
         self.assertFalse(self.system.answer("What time does the Key West branch close?").confident)
 
+    def test_a_rate_question_dated_in_its_words_answers_as_of_that_date_without_being_passed_one(self):
+        for question, then, now in (
+            ("What was the 12-month certificate APY in May 2026?", "2.90%", "3.40%"),
+            ("What was the 17-month special certificate APY in August 2026?", "3.95%", "4.10%"),
+        ):
+            with self.subTest(question):
+                answer = self.system.answer(question).text
+                self.assertIn(then, answer)
+                self.assertNotIn(now, answer)
+
+    def test_a_change_question_gives_then_and_now_and_only_the_tier_that_changed(self):
+        answer = self.system.answer("What did the 1st Rate Checking APY used to be?").text
+        self.assertIn("3.00%", answer)
+        self.assertIn("2.50%", answer)
+        self.assertNotIn("0.10%", answer)
+
+    def test_a_change_question_about_a_rate_that_never_moved_says_so(self):
+        self.assertTrue(self.system.answer("Has the Bright Savings APY changed?").text.startswith("No change"))
+
     def test_a_fee_is_answered_on_every_date_however_the_schedule_is_formatted(self):
         for as_of in ("2026-05-12", "2026-06-09", "2026-08-27", "2026-09-28"):
             with self.subTest(as_of):
