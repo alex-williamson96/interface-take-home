@@ -5,9 +5,8 @@ import re
 from collections import Counter, defaultdict
 from dataclasses import dataclass
 from typing import Optional
-from urllib.parse import urlparse
 
-from rate_facts import stem
+from rate_facts import page_path, stem
 
 IMAGE = re.compile(r"!\[[^\]]*\]\([^)]*\)")
 LINK = re.compile(r"\[([^\]]*)\]\(([^)\s]*)[^)]*\)")
@@ -60,13 +59,16 @@ WORDS_THAT_DO_NOT_SEARCH_TEXT = """
     when where which who why will with would you your link url website webpage page use see
 """
 
-WORDS_NAMING_A_KIND_OF_HOURS = ("lobby", "drive")
 LOCATOR_PATH = "/contact"
 HOURS_ASKED = re.compile(r"\bhours?\b", re.I)
 DATE_ASKED = re.compile(r"\bwhen\b|\bwhat date\b|\bstill open\b", re.I)
 ADDRESS_ASKED = re.compile(r"\baddress\b", re.I)
 ROUTING_ASKED = re.compile(r"\brouting\b", re.I)
-HOW_TO_REACH_ASKED = re.compile(r"\b(?:phone|call|contact information)\b", re.I)
+HOW_TO_REACH_ASKED = re.compile(
+    r"\bphone (?:numbers?|for)\b|\b(?:your|dupaco's) phone\b|\bcontact information\b"
+    r"|\b(?:who|number)\b.*\bcall\b|\bcall (?:you|dupaco|someone)\b",
+    re.I,
+)
 
 DATE_OR_YEAR = re.compile(PUBLISHED.pattern + r"|\b(?:19|20)\d\d\b")
 TIME_OF_DAY = re.compile(r"\d(?::\d\d)?\s*[ap]\.?m\b", re.I)
@@ -91,6 +93,7 @@ class Passage:
     title: str
     words: frozenset[str]
     title_words: frozenset[str]
+    searchable_words: frozenset[str]
     published: str
     has_its_own_date: bool
     trust: float
@@ -115,10 +118,7 @@ def words_in(text: str) -> list[str]:
 
 WORDS_THAT_DO_NOT_SEARCH = frozenset(words_in(WORDS_THAT_DO_NOT_SEARCH_TEXT))
 WORDS_A_SHAPE_ALREADY_SATISFIES = frozenset(words_in("address phone number"))
-
-
-def clean_path(url: str) -> str:
-    return urlparse(url).path.rstrip("/").lower() or "/"
+WORDS_NAMING_A_KIND_OF_HOURS = frozenset(words_in("lobby drive"))
 
 
 def trust_of(path: str) -> float:
@@ -188,7 +188,7 @@ class PassageIndex:
         newest_by_text: dict[str, Passage] = {}
         pages_repeating: Counter = Counter()
         for page in pages:
-            path = clean_path(page.url)
+            path = page_path(page.url)
             if path in seen_paths or path.startswith(EXCLUDED_PAGE_PREFIXES) or is_listing_page(path):
                 continue
             seen_paths.add(path)
@@ -215,6 +215,7 @@ class PassageIndex:
                     page.title,
                     words,
                     title_words,
+                    words | title_words,
                     published,
                     own_date is not None,
                     trust_of(path),
@@ -227,7 +228,7 @@ class PassageIndex:
         self._pages_repeating = pages_repeating
         for position, passage in enumerate(self._passages):
             self._passages_of[passage.url].append(passage)
-            for word in passage.words | passage.title_words:
+            for word in passage.searchable_words:
                 self._postings[word].append(position)
 
     def _rarity(self, word: str) -> float:
@@ -235,7 +236,7 @@ class PassageIndex:
 
     def _coverage(self, terms: set[str], passage: Passage) -> float:
         total = sum(self._rarity(term) for term in terms)
-        matched = sum(self._rarity(term) for term in terms if term in passage.words | passage.title_words)
+        matched = sum(self._rarity(term) for term in terms if term in passage.searchable_words)
         return matched / total if total else 0.0
 
     def _ranked(
@@ -249,7 +250,7 @@ class PassageIndex:
         ranked = []
         for position in candidates:
             passage = self._passages[position]
-            if not names <= passage.words | passage.title_words:
+            if not names <= passage.searchable_words:
                 continue
             if required_shape is not None and not required_shape.search(passage.text):
                 continue
@@ -269,9 +270,10 @@ class PassageIndex:
         shape = _shape_asked_for(question)
         fewest_body_matches = 1 if shape else FEWEST_MATCHED_TERMS_WITHOUT_A_TITLE_MATCH
         terms = _search_terms(question) - (WORDS_A_SHAPE_ALREADY_SATISFIES if shape else frozenset())
-        ranked = self._ranked(terms, _names_in(question), shape, fewest_body_matches)
+        names = _names_in(question)
+        ranked = self._ranked(terms, names, shape, fewest_body_matches)
         if shape is PHONE:
-            return self._phone_answer(ranked)
+            return self._phone_answer(ranked, names)
         if not ranked:
             return None
         if COUNTED_THING.search(question):
@@ -280,7 +282,7 @@ class PassageIndex:
         if shape in (ADDRESS, ROUTING_NUMBER):
             value = shape.search(best.text).group(0)
             return Found(value + ".", self._pages_stating(value, best), best.text)
-        return Found(_best_sentences(question, self._passages_of[best.url], shape), (best.url,), best.text)
+        return _answer_from_page(question, best, self._passages_of[best.url], names, shape)
 
     def _most_stated_count(
         self, question: str, ranked: list[tuple[float, Passage]], shape: re.Pattern
@@ -304,10 +306,11 @@ class PassageIndex:
         sentence, _, passage = max(statements, key=strength)
         return Found(sentence, (passage.url,), passage.text)
 
-    def _phone_answer(self, ranked: list[tuple[float, Passage]]) -> Optional[Found]:
-        site_pages = [passage for _, passage in ranked if passage.trust == TRUST_OF_SITE_PAGE]
-        locator = [p for p in self._passages if clean_path(p.url) == LOCATOR_PATH and PHONE.search(p.text)]
-        best = next(iter(site_pages + locator), None)
+    def _phone_answer(self, ranked: list[tuple[float, Passage]], names: set[str]) -> Optional[Found]:
+        stating = [passage for _, passage in ranked if passage.trust == TRUST_OF_SITE_PAGE]
+        if not names:
+            stating += [p for p in self._passages if page_path(p.url) == LOCATOR_PATH and PHONE.search(p.text)]
+        best = next(iter(stating), None)
         return Found(f"Call {PHONE.search(best.text).group(0)}.", (best.url,), best.text) if best else None
 
     def _pages_stating(self, value: str, best: Passage) -> tuple[str, ...]:
@@ -333,7 +336,7 @@ class PassageIndex:
         return Found(f"Hours vary by branch; which branch do you need? {listed}", tuple(u for u in cited if u), chosen[0].text)
 
     def _locator_url(self) -> Optional[str]:
-        return next((p.url for p in self._passages if clean_path(p.url) == LOCATOR_PATH), None)
+        return next((p.url for p in self._passages if page_path(p.url) == LOCATOR_PATH), None)
 
     def link_for(self, question: str) -> Optional[Found]:
         terms = _search_terms(question)
@@ -396,13 +399,23 @@ def _newest_among_the_tied(ranked: list[tuple[float, Passage]]) -> Passage:
     return max(tied, key=lambda passage: passage.published)
 
 
-def _best_sentences(question: str, passages: list[Passage], shape: Optional[re.Pattern]) -> str:
+def _answer_from_page(
+    question: str, best: Passage, page: list[Passage], names: set[str], shape: Optional[re.Pattern]
+) -> Optional[Found]:
     terms = _search_terms(question) | {stem("dupaco")}
-    sentences = [s for passage in passages for s in SENTENCE_END.split(passage.display) if not s.endswith("?")]
-    if shape is not None:
-        sentences = [s for s in sentences if shape.search(s)]
-    overlap = {s: len(terms & set(words_in(s))) for s in sentences}
-    best_overlap = max(overlap.values())
-    worth_keeping = [s for s in sentences if overlap[s] >= best_overlap * LOWEST_SHARE_OF_BEST_SENTENCE_KEPT]
+    passage_of: dict[str, Passage] = {}
+    for passage in page:
+        for sentence in SENTENCE_END.split(passage.display):
+            shape_fits = shape is None or shape.search(sentence)
+            about_the_names = passage is best or names <= set(words_in(sentence))
+            if shape_fits and about_the_names and not sentence.endswith("?"):
+                passage_of.setdefault(sentence, passage)
+    overlap = {sentence: len(terms & set(words_in(sentence))) for sentence in passage_of}
+    best_overlap = max(overlap.values(), default=0)
+    if best_overlap == 0:
+        return None
+    worth_keeping = [s for s in passage_of if overlap[s] >= best_overlap * LOWEST_SHARE_OF_BEST_SENTENCE_KEPT]
     kept = set(sorted(worth_keeping, key=lambda s: overlap[s], reverse=True)[:SENTENCES_IN_AN_ANSWER])
-    return " ".join(dict.fromkeys(s for s in sentences if s in kept))
+    answer = [s for s in passage_of if s in kept]
+    quoted = dict.fromkeys(passage_of[s].text for s in answer)
+    return Found(" ".join(answer), (best.url,), " ".join(quoted))

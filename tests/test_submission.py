@@ -158,17 +158,61 @@ class AnswersFromPageText(unittest.TestCase):
         answer = system_with_pages((RATES_URL, sheet), (PRODUCT_URL, sheet)).answer("What link shows your CD rates?")
         self.assertEqual(answer.text, PRODUCT_URL)
 
+
     def test_a_rate_question_without_a_rate_word_never_falls_back_to_page_text(self):
         page = article("June 1, 2026", "The current 30-year fixed averaged 6.04%. The 17-month certificate special is 4.10%.")
         system = system_with_pages((NEWS_URL + "a", page))
         for question in ("What's the current 30-year fixed?", "How much is the 17-month certificate special?"):
             self.assertFalse(system.answer(question).confident, question)
 
+    def test_a_when_question_whose_only_date_is_inside_a_question_refuses(self):
+        page = article("x", "Did you know the Galena branch opened in 1948?")
+        self.assertFalse(system_with_pages((NEWS_URL + "a", page)).answer("When did the Galena branch open?").confident)
+
+    def test_a_question_naming_a_branch_leaves_out_sentences_elsewhere_on_the_page_about_others(self):
+        page = article(
+            "June 1, 2026",
+            "The Galena branch will close March 31, 2026.\n\n# Elsewhere\n\nThe Asbury branch will close June 1, 2026.",
+        )
+        answer = system_with_pages((NEWS_URL + "a", page)).answer("When will the Galena branch close?")
+        self.assertIn("March 31, 2026", answer.text)
+        self.assertNotIn("Asbury", answer.text)
+
+    def test_a_question_naming_nothing_can_answer_from_elsewhere_on_the_page_and_quotes_it(self):
+        page = article(
+            "June 1, 2026",
+            "Members earn rewards on every savings deposit made online.\n\n# Joining\n\nMembers join online with a savings deposit.",
+        )
+        answer = system_with_pages((NEWS_URL + "a", page)).answer("Can members join with a savings deposit online?")
+        for sentence in ("Members earn rewards", "Members join online"):
+            self.assertIn(sentence, answer.text)
+            self.assertIn(sentence, answer.sources[0].quote)
+
+    def test_a_phone_number_for_another_company_refuses(self):
+        system = system_with_pages((CONTACT_URL, CONTACT_PAGE))
+        self.assertFalse(system.answer("What is Chase's phone number?").confident)
+
+    def test_a_question_mentioning_a_phone_is_not_asking_for_a_number(self):
+        system = system_with_pages((CONTACT_URL, CONTACT_PAGE))
+        self.assertFalse(system.answer("Can I deposit a check with my phone?").confident)
+
+    def test_a_phone_question_naming_no_one_gets_the_locator_number(self):
+        answer = system_with_pages((CONTACT_URL, CONTACT_PAGE)).answer("What is your phone number?")
+        self.assertEqual(answer.text, "Call 800-373-7600.")
+
     def test_a_link_to_business_rates_is_the_business_product_page(self):
         business_url = "https://www.dupaco.com/business/savings/certificates"
         sheet = dated_certificate_table("3.80%", "4/2/2026")
         system = system_with_pages((PRODUCT_URL, sheet), (business_url, sheet))
         self.assertEqual(system.answer("What link shows your business CD rates?").text, business_url)
+
+    def test_hours_asked_by_kind_only_read_schedules_of_that_kind(self):
+        lobby_only = article("June 1, 2026", "Asbury branch hours are:\n\n**Lobby**\n\nMonday-Friday: 8 a.m.-4 p.m.")
+        drive_up = article("June 1, 2026", "Galena branch hours are:\n\n**Drive-up**\n\nMonday-Friday: 7 a.m.-6 p.m.")
+        system = system_with_pages((NEWS_URL + "asbury", lobby_only), (NEWS_URL + "galena", drive_up))
+        answer = system.answer("What are the drive-up hours?").text
+        self.assertIn("7 a.m.-6 p.m.", answer)
+        self.assertNotIn("8 a.m.-4 p.m.", answer)
 
 
 class AnswerBehaviour(unittest.TestCase):
