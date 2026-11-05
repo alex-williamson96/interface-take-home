@@ -9,6 +9,8 @@ from rate_facts import RateFact, extract_rate_facts, stem
 
 REFUSAL_TEXT = "I can't confirm that from the website. Please contact Dupaco."
 JUMBO = stem("jumbo")
+CASH = stem("cash")
+FAMILY_OF_CASH_OUT_ROWS = "home_equity"
 EXCLUDED_UNLESS_ASKED = frozenset(stem(word) for word in ("jumbo", "refinance", "relief", "introductory", "transfer", "cash"))
 FAMILY_SPANNING_PERSONAL_AND_BUSINESS = "card"
 MAX_CITED_PAGES = 4
@@ -73,7 +75,38 @@ def select_facts(question: RateQuestion, facts: tuple[RateFact, ...]) -> list[Ra
 def _authoritative_for_family(question: RateQuestion, facts: tuple[RateFact, ...]) -> list[RateFact]:
     family_facts = [f for f in facts if f.family == question.family]
     sheet_scopes = {f.business for f in family_facts if f.from_rate_sheet}
-    return [f for f in family_facts if f.from_rate_sheet or f.business not in sheet_scopes]
+    newest_product_rows = _newest_dated_product_rows(family_facts)
+    authoritative = []
+    for fact in family_facts:
+        if fact.from_rate_sheet:
+            authoritative.append(_newer_row_if_it_disagrees(fact, newest_product_rows))
+        elif fact.business not in sheet_scopes:
+            authoritative.append(fact)
+    return authoritative
+
+
+def _same_row_key(fact: RateFact) -> tuple[bool, str]:
+    return fact.business, fact.label.replace(",", "")
+
+
+def _newest_dated_product_rows(facts: list[RateFact]) -> dict[tuple[bool, str], RateFact]:
+    newest: dict[tuple[bool, str], RateFact] = {}
+    for fact in facts:
+        if fact.from_rate_sheet or fact.effective is None:
+            continue
+        current = newest.get(_same_row_key(fact))
+        if current is None or fact.effective > current.effective:
+            newest[_same_row_key(fact)] = fact
+    return newest
+
+
+def _newer_row_if_it_disagrees(sheet_row: RateFact, newest_product_rows: dict[tuple[bool, str], RateFact]) -> RateFact:
+    product_row = newest_product_rows.get(_same_row_key(sheet_row))
+    if product_row is None or sheet_row.effective is None:
+        return sheet_row
+    if product_row.effective > sheet_row.effective and product_row.values != sheet_row.values:
+        return product_row
+    return sheet_row
 
 
 def _qualifiers_fit(question: RateQuestion, fact: RateFact) -> bool:
@@ -126,7 +159,9 @@ def _without_unasked_variants(question: RateQuestion, facts: list[RateFact]) -> 
     jumbo_can_apply = question.amount is not None or question.wants_highest or question.wants_lowest
     if jumbo_can_apply:
         unasked -= {JUMBO}
-    remaining = [f for f in facts if not (unasked & f.words)]
+    if question.family == FAMILY_OF_CASH_OUT_ROWS:
+        unasked -= {CASH}
+    remaining =[f for f in facts if not (unasked & f.words)]
     return remaining or facts
 
 

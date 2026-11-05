@@ -11,6 +11,8 @@ from knowledge import KnowledgeSystem  # noqa: E402
 
 RATES_URL = "https://www.dupaco.com/rates"
 CALCULATOR_URL = "https://www.dupaco.com/calculators/vehicle-affordability"
+PRODUCT_URL = "https://www.dupaco.com/personal/savings/certificates"
+HOME_EQUITY_URL = "https://www.dupaco.com/personal/loans/home-equity"
 
 
 def certificate_sheet(jumbo_apy: str) -> str:
@@ -42,6 +44,29 @@ def system_with_two_dates() -> KnowledgeSystem:
     system = KnowledgeSystem()
     system.ingest(snapshot("2026-05-12", (RATES_URL, certificate_sheet("3.90%"))))
     system.ingest(snapshot("2026-09-28", (RATES_URL, certificate_sheet("4.00%"))))
+    return system
+
+
+def dated_certificate_table(apy: str, effective: str) -> str:
+    return f"""Special Certificates
+
+| Certificate | Annual Percentage Yield (APY) |
+| --- | --- |
+| 10 Month Fixed Certificate Special | {apy} |
+
+Rates are effective as of {effective}.
+"""
+
+
+def system_with_sheet_and_product_page(sheet_date: str, product_date: str) -> KnowledgeSystem:
+    system = KnowledgeSystem()
+    system.ingest(
+        snapshot(
+            "2026-05-12",
+            (RATES_URL, dated_certificate_table("3.80%", sheet_date)),
+            (PRODUCT_URL, dated_certificate_table("3.70%", product_date)),
+        )
+    )
     return system
 
 
@@ -314,6 +339,42 @@ class QuestionWording(unittest.TestCase):
 
     def test_a_question_about_how_rates_work_refuses(self):
         self.assertFalse(system_with_two_dates().answer("Why did my CD rate go down?").confident)
+
+    def test_a_product_page_dated_after_the_rate_sheet_wins_when_they_disagree(self):
+        answer = system_with_sheet_and_product_page("4/2/2026", "4/6/2026").answer("What is the 10 month CD APY?")
+        self.assertIn("3.70%", answer.text)
+        self.assertNotIn("3.80%", answer.text)
+        self.assertEqual(answer.sources[0].url, PRODUCT_URL)
+
+    def test_a_cash_out_question_keeps_rows_taken_from_a_newer_product_page(self):
+        def refinance_table(heading, first_rate, effective):
+            return f"""{heading}
+
+| Loan | Rate | APR |
+| --- | --- | --- |
+| Refinance: 20-Year Fixed Conventional | {first_rate} | 6.10% |
+| Refinance: 15-Year Fixed Conventional | 5.50% | 5.60% |
+
+Rates are effective as of {effective}.
+"""
+
+        system = KnowledgeSystem()
+        system.ingest(
+            snapshot(
+                "2026-05-12",
+                (RATES_URL, refinance_table("Home Equity Loan", "6.00%", "4/2/2026")),
+                (HOME_EQUITY_URL, refinance_table("Home Equity\n\nCash-Out Refinance", "5.90%", "4/6/2026")),
+            )
+        )
+        text = system.answer("What is the cash-out refinance rate?").text
+        self.assertIn("5.90%", text)
+        self.assertIn("5.50%", text)
+        self.assertNotIn("6.00%", text)
+
+    def test_the_rate_sheet_wins_over_a_product_page_with_an_older_or_equal_date(self):
+        for product_date in ("4/1/2026", "4/2/2026"):
+            answer = system_with_sheet_and_product_page("4/2/2026", product_date).answer("What is the 10 month CD APY?")
+            self.assertIn("3.80%", answer.text, product_date)
 
 
 class HarnessLoading(unittest.TestCase):
