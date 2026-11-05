@@ -109,6 +109,11 @@ FEES_AND_LIMITS_THE_SITE_DOES_NOT_STATE = (
     "What is the minimum to open a 12-month certificate?",
     "How do I pay my car loan?",
     "How can I pay my car loan?",
+    "How do I dispute a charge?",
+    "How do I find the rates page?",
+    "When will Dupaco close?",
+    "When will the certificate special end?",
+    "Is the Coralville Branch open yet?",
     "Can I pay my mortgage at a branch?",
 )
 
@@ -120,6 +125,7 @@ COUNTS_THE_SITE_STATES = (
     ("How many locations does Dupaco have?", "22"),
     ("How many Dupaco locations are there?", "22"),
     ("How many offices does Dupaco have?", "22"),
+    ("What's the number of Dupaco branches?", "22"),
     ("How many branches are there in total?", "22"),
     ("How many full-service branches does Dupaco have?", "22"),
     ("How many members does Dupaco have?", "179,000"),

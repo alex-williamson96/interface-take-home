@@ -189,6 +189,8 @@ def search_may_answer(question: str) -> bool:
     if PAYING_A_BILL.search(question) and _family_in(question):
         return False
     if RATE_INTENT.search(question):
+        if ASKS_HOW_RATES_WORK.search(question):
+            return bool(NON_RATE_TOPIC.search(question) or REACHING_SOMEONE.search(question))
         return any(topic.search(question) for topic in TOPICS_OTHER_THAN_A_RATE)
     if _asks_for_a_rate_without_saying_so(question):
         return any(topic.search(question) for topic in TOPICS_AN_UNSTATED_RATE_MAY_BE_ASKED_ALONGSIDE)

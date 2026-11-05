@@ -111,11 +111,13 @@ END_OF_EARLY_IN_A_YEAR = "03-31"
 BARE_YEAR = re.compile(r"\b(?:19|20)\d\d\b")
 STILL_AHEAD_ASKED = re.compile(r"\bwill\b|\bgoing to\b|\b(?:does|do|is|are)\b", re.I)
 STILL_OPEN_ASKED = re.compile(
-    r"^\s*(?:is|are)\s+(.+?)\s+(?:still open\b|open(?: anymore| any more)?\s*\??\s*$)"
+    r"^\s*(?:is|are)\s+(.+?)\s+(?:still open\b|open(?: anymore| any more| yet)?\s*\??\s*$)"
     r"|\bif\s+(.+?)\s+(?:is|are)\s+still open\b",
     re.I,
 )
 CLOSED_ASKED = re.compile(r"^\s*(?:is|are|has|have|did)\s+(.+?)\s+(?:closed|closing|close)\s*\??\s*$", re.I)
+WHEN_IT_CLOSES_ASKED = re.compile(r"^\s*when\s+(?:will|does|do|did|is|are)\s+(.+?)\s+clos(?:e|ing)\s*\??\s*$", re.I)
+RATE_SHEET_FOOTER = re.compile(r"\brates are effective as of\b", re.I)
 LAST_DAY_ASKED = re.compile(r"\blast day (?:for|of|at)\s+(.+?)\s*\??\s*$", re.I)
 AHEAD_NOT_NOW_ASKED = re.compile(r"\bwill\b|\bgoing to\b", re.I)
 WRITTEN_AS_STILL_AHEAD = re.compile(r"\b(?:will|plans?|planned|expected|scheduled)\b", re.I)
@@ -128,7 +130,7 @@ TITLE_SITE_SUFFIX = re.compile(r"\s*\|.*$")
 BECOMING_A_MEMBER = re.compile(r"\bbecome a(?: dupaco)? member\b|\bmembership\b", re.I)
 END_OF_ARTICLE = re.compile(r"^#+\s*Handpicked for You.*", re.M | re.S)
 TEASER = re.compile(r"\b(?:min read|keep reading|read more)\b", re.I)
-COUNTED_THING = re.compile(r"\b[Hh]ow many\s+(?:[A-Z][a-z]+\s+)*([A-Za-z]+)")
+COUNTED_THING = re.compile(r"\b(?:[Hh]ow many|[Tt]he number of)\s+(?:[A-Z][a-z]+\s+)*([A-Za-z]+)")
 FULL_SERVICE = re.compile(r"\bfull[- ]service\b", re.I)
 STATED_ABOUT_DUPACO = re.compile(r"\bdupaco\b|\bit has\b|\bour\b|\bfounded in 1948\b", re.I)
 MEMBERSHIP_TOTAL = r"membership (?:totals|has grown to) (?:more than )?\d+(?:,\d{3})*"
@@ -356,6 +358,9 @@ class PassageIndex:
             return self._search_as_worded(WHEN_DUPACO_WAS_FOUNDED)
         if COUNTED_THING.search(question):
             question = FULL_SERVICE.sub(" ", question)
+        closes = WHEN_IT_CLOSES_ASKED.search(question)
+        if closes and not _search_terms(closes.group(1)):
+            return None
         last_day = LAST_DAY_ASKED.search(question)
         if last_day and _names_in(_when_will_it_close(last_day.group(1))):
             return self._search_as_worded(_when_will_it_close(last_day.group(1)))
@@ -492,8 +497,7 @@ class PassageIndex:
             (sentence, passage)
             for _, passage in ranked
             for sentence in SENTENCE_END.split(passage.display)
-            if DATE_OR_YEAR.search(sentence)
-            and not sentence.endswith("?")
+            if _can_state_a_date(sentence)
             and _mentions(sentence, asked)
             and not self._reads_ahead_but_passed(sentence)
         ]
@@ -706,6 +710,10 @@ def _sentence_stating_the_date(question: str, sentences: list[str], names: set[s
     return max(sentences, key=strength)
 
 
+def _can_state_a_date(sentence: str) -> bool:
+    return bool(DATE_OR_YEAR.search(sentence)) and not RATE_SHEET_FOOTER.search(sentence) and not sentence.endswith(("?", ":"))
+
+
 def _latest_date_in(sentence: str) -> tuple[str, str]:
     full_dates = [
         (f"{found.group(3)}-{MONTH_NUMBERS[found.group(1)]:02d}-{int(found.group(2)):02d}", found.group(0))
@@ -753,7 +761,7 @@ def _answer_from_page(
     passage_of: dict[str, Passage] = {}
     for passage in page:
         for sentence in SENTENCE_END.split(passage.display):
-            shape_fits = shape is None or shape.search(sentence)
+            shape_fits = _can_state_a_date(sentence) if shape is DATE_OR_YEAR else shape is None or shape.search(sentence)
             belongs = passage is best or _belongs_beside_the_best_passage(sentence, names, shape)
             if shape_fits and belongs and not sentence.endswith("?"):
                 passage_of.setdefault(sentence, passage)
