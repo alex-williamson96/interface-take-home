@@ -1,0 +1,183 @@
+from __future__ import annotations
+
+from dataclasses import dataclass
+from typing import Optional
+
+from contract import Answer, Conflict, Snapshot, Source
+from question import RateQuestion, parse_rate_question
+from rate_facts import RateFact, extract_rate_facts, stem
+
+REFUSAL_TEXT = "I can't confirm that from the website. Please contact Dupaco."
+JUMBO = stem("jumbo")
+EXCLUDED_UNLESS_ASKED = frozenset(stem(word) for word in ("jumbo", "refinance", "relief", "introductory", "transfer", "cash"))
+FAMILY_SPANNING_PERSONAL_AND_BUSINESS = "card"
+MAX_CITED_PAGES = 4
+
+
+@dataclass(frozen=True)
+class IndexedSnapshot:
+    snapshot_id: str
+    taken_on: str
+    facts: tuple[RateFact, ...]
+
+
+class KnowledgeSystem:
+    def __init__(self) -> None:
+        self._snapshots: list[IndexedSnapshot] = []
+
+    def ingest(self, snapshot: Snapshot) -> None:
+        facts: list[RateFact] = []
+        for page in snapshot.pages:
+            facts.extend(extract_rate_facts(page.url, page.markdown))
+        self._snapshots.append(IndexedSnapshot(snapshot.snapshot_id, snapshot.taken_on, tuple(facts)))
+
+    def answer(self, question: str, as_of: Optional[str] = None) -> Answer:
+        snapshot = self._snapshot_for(as_of)
+        parsed = parse_rate_question(question)
+        if snapshot is None or parsed is None:
+            return refusal()
+        selected = select_facts(parsed, snapshot.facts)
+        if not selected:
+            return refusal()
+        return Answer(
+            text=render_answer(parsed, selected),
+            sources=cite(selected, snapshot),
+        )
+
+    def conflicts(self) -> list[Conflict]:
+        return []
+
+    def _snapshot_for(self, as_of: Optional[str]) -> Optional[IndexedSnapshot]:
+        eligible = [s for s in self._snapshots if as_of is None or s.taken_on <= as_of]
+        return eligible[-1] if eligible else None
+
+
+def refusal() -> Answer:
+    return Answer(text=REFUSAL_TEXT, confident=False)
+
+
+def select_facts(question: RateQuestion, facts: tuple[RateFact, ...]) -> list[RateFact]:
+    candidates = _authoritative_for_family(question, facts)
+    candidates = [f for f in candidates if _qualifiers_fit(question, f)]
+    naming_a_product = any(question.words & f.words for f in candidates)
+    if question.family != FAMILY_SPANNING_PERSONAL_AND_BUSINESS or naming_a_product or question.business:
+        candidates = [f for f in candidates if f.business == question.business]
+    candidates = _best_word_matches(question, candidates)
+    candidates = _having_every_asked_variant(question, candidates)
+    candidates = _narrowest_amount_tier(question, candidates)
+    candidates = _without_unasked_variants(question, candidates)
+    candidates = _extreme_only(question, candidates)
+    return sorted(_unique_by_name_and_values(candidates), key=lambda fact: fact.business)
+
+
+def _authoritative_for_family(question: RateQuestion, facts: tuple[RateFact, ...]) -> list[RateFact]:
+    family_facts = [f for f in facts if f.family == question.family]
+    sheet_scopes = {f.business for f in family_facts if f.from_rate_sheet}
+    return [f for f in family_facts if f.from_rate_sheet or f.business not in sheet_scopes]
+
+
+def _qualifiers_fit(question: RateQuestion, fact: RateFact) -> bool:
+    if question.term_months is not None and fact.term_months != question.term_months:
+        return False
+    if question.model_year is not None and fact.model_years is not None:
+        first, last = fact.model_years
+        if not first <= question.model_year <= last:
+            return False
+    if question.amount is not None and fact.amount_range is not None:
+        low, high = fact.amount_range
+        if not low <= question.amount <= high:
+            return False
+    return True
+
+
+def _best_word_matches(question: RateQuestion, facts: list[RateFact]) -> list[RateFact]:
+    if not facts or not question.words:
+        return facts
+    best = max(len(question.words & f.words) for f in facts)
+    if best == 0:
+        return []
+    return [f for f in facts if len(question.words & f.words) == best]
+
+
+def _having_every_asked_variant(question: RateQuestion, facts: list[RateFact]) -> list[RateFact]:
+    asked = EXCLUDED_UNLESS_ASKED & question.words
+    return [f for f in facts if asked <= f.words]
+
+
+def _narrowest_amount_tier(question: RateQuestion, facts: list[RateFact]) -> list[RateFact]:
+    if question.amount is None:
+        return facts
+    narrowest: dict[tuple, tuple[float, float]] = {}
+    for fact in facts:
+        if fact.amount_range is not None:
+            tier_group = (fact.heading, fact.term_months)
+            narrowest[tier_group] = min(narrowest.get(tier_group, _tier_width(fact)), _tier_width(fact))
+    return [f for f in facts if f.amount_range is None or _tier_width(f) == narrowest[(f.heading, f.term_months)]]
+
+
+def _tier_width(fact: RateFact) -> tuple[float, float]:
+    low, high = fact.amount_range
+    return high, -low
+
+
+def _without_unasked_variants(question: RateQuestion, facts: list[RateFact]) -> list[RateFact]:
+    unasked = EXCLUDED_UNLESS_ASKED - question.words
+    jumbo_can_apply = question.amount is not None or question.wants_highest or question.wants_lowest
+    if jumbo_can_apply:
+        unasked -= {JUMBO}
+    remaining = [f for f in facts if not (unasked & f.words)]
+    return remaining or facts
+
+
+def _extreme_only(question: RateQuestion, facts: list[RateFact]) -> list[RateFact]:
+    if not facts or not (question.wants_highest or question.wants_lowest):
+        return facts
+    chooser = max if question.wants_highest else min
+    target = chooser(_headline_number(f) for f in facts)
+    return [f for f in facts if _headline_number(f) == target]
+
+
+def _headline_number(fact: RateFact) -> float:
+    value = fact.values.get("apy") or fact.values.get("apr") or fact.values.get("rate") or fact.values.get("dividend")
+    return float(value.split("%")[0])
+
+
+def _unique_by_name_and_values(facts: list[RateFact]) -> list[RateFact]:
+    seen: dict[tuple[str, tuple], RateFact] = {}
+    for fact in facts:
+        seen.setdefault((fact.name, tuple(sorted(fact.values.items()))), fact)
+    return list(seen.values())
+
+
+def render_answer(question: RateQuestion, facts: list[RateFact]) -> str:
+    return "; ".join(f"{fact.name}: {_render_values(question, fact)}" for fact in facts) + "."
+
+
+def _render_values(question: RateQuestion, fact: RateFact) -> str:
+    values = fact.values
+    if "promo_apy" in values and "apy" in values:
+        return f"{values['promo_apy']} APY for the promotional period, then {values['apy']} APY"
+    if "rate" in values and "apr" in values:
+        return f"{values['rate']} rate, {values['apr']} APR"
+    if question.wants_dividend and "dividend" in values and "apy" in values:
+        return f"{values['dividend']} dividend rate, {values['apy']} APY"
+    if "apy" in values:
+        return f"{values['apy']} APY"
+    if "apr" in values:
+        return f"{values['apr']} APR"
+    return next(iter(values.values()))
+
+
+def cite(selected: list[RateFact], snapshot: IndexedSnapshot) -> list[Source]:
+    cited: dict[str, Source] = {}
+    for fact in selected:
+        cited.setdefault(fact.url, Source(url=fact.url, snapshot_id=snapshot.snapshot_id, quote=fact.row))
+    selected_values = {(f.family, tuple(sorted(f.values.items()))) for f in selected}
+    for other in snapshot.facts:
+        if len(cited) >= MAX_CITED_PAGES:
+            break
+        if other.business and not any(f.business for f in selected):
+            continue
+        if (other.family, tuple(sorted(other.values.items()))) in selected_values:
+            cited.setdefault(other.url, Source(url=other.url, snapshot_id=snapshot.snapshot_id, quote=other.row))
+    return list(cited.values())
