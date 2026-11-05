@@ -19,8 +19,9 @@ SENTENCE_END = re.compile(r"(?<=[.!?])\s+(?=[A-Z\"“])")
 PUBLISHED = re.compile(
     r"\b(January|February|March|April|May|June|July|August|September|October|November|December) (\d{1,2}), (20\d\d)\b"
 )
+LETTERS_IN_A_SHORT_MONTH = 3
 MONTH_NUMBERS = {
-    month: number
+    month[:LETTERS_IN_A_SHORT_MONTH]: number
     for number, month in enumerate(
         "January February March April May June July August September October November December".split(), start=1
     )
@@ -66,7 +67,7 @@ OPENING_TIME_ASKED = re.compile(r"\bwhen (?:does|do|is)\b.*\b(?:branch(?:es)?|lo
 CLOSING_TIME_ASKED = re.compile(r"\bwhen (?:does|do|is)\b.*\b(?:branch(?:es)?|lobby|drive-up)\b.*\bclose\b", re.I)
 A_BRANCH_ASKED_ABOUT = re.compile(r"\b(?:branch(?:es)?|locations?)\b", re.I)
 FIRST_OR_LAST_OF_A_KIND = re.compile(r"\b(?:first|last|oldest|newest|original)\s+[a-z]+", re.I)
-BYLINE = re.compile(r"Written by .*?\|\s*[A-Z][a-z]{2} \d{1,2}, \d{4} [\d:]+ [AP]M")
+BYLINE = re.compile(r"Written by .*?\|\s*([A-Z][a-z]{2}) (\d{1,2}), (\d{4}) [\d:]+ [AP]M")
 DATE_ASKED = re.compile(r"\bwhen\b|\b(?:what|which) (?:date|year)\b|\bstill open\b", re.I)
 ADDRESS_ASKED = re.compile(r"\baddress\b", re.I)
 ROUTING_ASKED = re.compile(r"\brouting\b", re.I)
@@ -141,11 +142,11 @@ def trust_of(path: str) -> float:
 
 
 def published_date(markdown: str) -> Optional[str]:
-    found = PUBLISHED.search(markdown[:CHARS_SEARCHED_FOR_PUBLISHED_DATE])
+    found = PUBLISHED.search(markdown[:CHARS_SEARCHED_FOR_PUBLISHED_DATE]) or BYLINE.search(markdown)
     if not found:
         return None
     month, day, year = found.groups()
-    return f"{year}-{MONTH_NUMBERS[month]:02d}-{int(day):02d}"
+    return f"{year}-{MONTH_NUMBERS[month[:LETTERS_IN_A_SHORT_MONTH]]:02d}-{int(day):02d}"
 
 
 def _is_a_page_address(target: str) -> bool:

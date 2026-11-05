@@ -215,6 +215,12 @@ class AnswersFromPageText(unittest.TestCase):
         for question in ("When was Dupaco founded?", "What year was Dupaco founded?"):
             self.assertIn("1948", system.answer(question).text, question)
 
+    def test_an_article_dated_only_by_its_byline_does_not_count_as_new(self):
+        old = "# Old news\n\nWritten by [Emily](https://www.dupaco.com/a) | Oct 8, 2021 12:57:34 PM\n\nFounded in 1948, Dupaco has 143,000 members."
+        new = article("May 5, 2026", "Founded in 1948, Dupaco has 179,000 members.")
+        answer = system_with_pages((NEWS_URL + "old", old), (NEWS_URL + "new", new)).answer("When was Dupaco founded?")
+        self.assertIn("179,000", answer.text)
+
     def test_a_byline_date_is_not_the_answer_to_a_date_question(self):
         page = "New branch office to open in Coralville\n\nWritten by [Emily](https://www.dupaco.com/a) | Oct 8, 2021 12:57:34 PM"
         answer = system_with_pages((NEWS_URL + "a", page)).answer("When will the new branch office in Coralville open?")
