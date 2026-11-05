@@ -117,6 +117,8 @@ STILL_OPEN_ASKED = re.compile(
 )
 CLOSED_ASKED = re.compile(r"^\s*(?:is|are|has|have|did)\s+(.+?)\s+(?:closed|closing|close)\s*\??\s*$", re.I)
 WHEN_IT_CLOSES_ASKED = re.compile(r"^\s*when\s+(?:will|does|do|did|is|are)\s+(.+?)\s+clos(?:e|ing)\s*\??\s*$", re.I)
+LOWERCASE_WORD = re.compile(r"\b[a-z]{2,}")
+FEWEST_ASKED_WORDS_WITHOUT_A_NAME = 2
 RATE_SHEET_FOOTER = re.compile(r"\brates are effective as of\b", re.I)
 LAST_DAY_ASKED = re.compile(r"\blast day (?:for|of|at)\s+(.+?)\s*\??\s*$", re.I)
 AHEAD_NOT_NOW_ASKED = re.compile(r"\bwill\b|\bgoing to\b", re.I)
@@ -183,7 +185,7 @@ def words_in(text: str) -> list[str]:
 
 WORDS_THAT_DO_NOT_SEARCH = frozenset(words_in(WORDS_THAT_DO_NOT_SEARCH_TEXT))
 WORDS_A_SHAPE_ALREADY_SATISFIES = frozenset(words_in("address phone number year date"))
-WORDS_ANY_BRANCH_SHARES = frozenset(words_in("branch location"))
+WORDS_ANY_BRANCH_SHARES = frozenset(words_in("branch location drive up lobby"))
 WORDS_THAT_ONLY_ASK_WHEN = frozenset(words_in("next hold held"))
 MEMBER = stem("member")
 COUNTED_AS_BRANCHES = frozenset(stem(word) for word in ("location", "office"))
@@ -434,6 +436,8 @@ class PassageIndex:
         if COUNTED_THING.search(question):
             return self._most_stated_count(question, ranked, shape)
         if shape is DATE_OR_YEAR:
+            if not _names_what_it_asks_the_date_of(question, names):
+                return None
             ranked = _stating_any_first_or_last_asked_about(question, ranked)
             if not ranked:
                 return None
@@ -498,7 +502,7 @@ class PassageIndex:
             for _, passage in ranked
             for sentence in SENTENCE_END.split(passage.display)
             if _can_state_a_date(sentence)
-            and _mentions(sentence, asked)
+            and _mentions(_through_the_date(sentence), asked)
             and not self._reads_ahead_but_passed(sentence)
         ]
         if not statements:
@@ -704,14 +708,26 @@ def _sentence_stating_the_date(question: str, sentences: list[str], names: set[s
     asked = _asked_beyond_the_name(question, names)
 
     def strength(sentence: str) -> tuple[bool, int, int, bool]:
-        words = set(words_in(sentence))
-        return _mentions(sentence, asked), len(asked & words), len(terms & words), bool(FULL_DATE.search(sentence))
+        words = set(words_in(_through_the_date(sentence)))
+        mentions_it = _mentions(_through_the_date(sentence), asked)
+        return mentions_it, len(asked & words), len(terms & words), bool(FULL_DATE.search(sentence))
 
     return max(sentences, key=strength)
 
 
 def _can_state_a_date(sentence: str) -> bool:
-    return bool(DATE_OR_YEAR.search(sentence)) and not RATE_SHEET_FOOTER.search(sentence) and not sentence.endswith(("?", ":"))
+    return (
+        bool(DATE_OR_YEAR.search(sentence))
+        and bool(LOWERCASE_WORD.search(sentence))
+        and not RATE_SHEET_FOOTER.search(sentence)
+        and not sentence.endswith(("?", ":"))
+    )
+
+
+def _names_what_it_asks_the_date_of(question: str, names: set[str]) -> bool:
+    if names or A_BRANCH_ASKED_ABOUT.search(question) or FOUNDING_ASKED.search(question):
+        return True
+    return len(_asked_beyond_the_name(question, names)) >= FEWEST_ASKED_WORDS_WITHOUT_A_NAME
 
 
 def _latest_date_in(sentence: str) -> tuple[str, str]:
@@ -735,13 +751,23 @@ def _latest_date_in(sentence: str) -> tuple[str, str]:
 
 
 def _asked_beyond_the_name(question: str, names: set[str]) -> set[str]:
-    return _search_terms(question) - names - WORDS_A_SHAPE_ALREADY_SATISFIES - WORDS_ANY_BRANCH_SHARES - WORDS_THAT_ONLY_ASK_WHEN
+    return (
+        _search_terms(question)
+        - names
+        - WORDS_A_SHAPE_ALREADY_SATISFIES
+        - WORDS_ANY_BRANCH_SHARES
+        - WORDS_IN_DUPACOS_OWN_NAME
+        - WORDS_THAT_ONLY_ASK_WHEN
+    )
 
 
 def _mentions(sentence: str, asked: set[str]) -> bool:
-    if not asked or asked & set(words_in(sentence)):
+    if not asked:
         return True
-    return CLOSE in asked and bool(CLOSING_STATED.search(sentence))
+    matched = asked & set(words_in(sentence))
+    if CLOSE in asked and CLOSING_STATED.search(sentence):
+        matched = matched | {CLOSE}
+    return 2 * len(matched) >= len(asked)
 
 
 def _when_will_it_close(place: str) -> str:
@@ -771,7 +797,7 @@ def _answer_from_page(
         return None
     if shape is DATE_OR_YEAR:
         sentence = _sentence_stating_the_date(question, list(passage_of), names)
-        if not _mentions(sentence, _asked_beyond_the_name(question, names)):
+        if not _mentions(_through_the_date(sentence), _asked_beyond_the_name(question, names)):
             return None
         return Found(_through_the_date(sentence), (best.url,), passage_of[sentence].text)
     worth_keeping = [s for s in passage_of if overlap[s] >= best_overlap * LOWEST_SHARE_OF_BEST_SENTENCE_KEPT]

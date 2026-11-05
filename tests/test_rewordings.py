@@ -69,6 +69,7 @@ DATES_THE_SITE_STATES = (
     ("When did Dupaco start?", "1948"),
     ("How old is Dupaco?", "1948"),
     ("When was Dupaco Credit Union established?", "1948"),
+    ("When was the credit union founded?", "1948"),
 )
 
 ANSWERS_THAT_MUST_STATE_A_FACT = (
@@ -113,6 +114,9 @@ FEES_AND_LIMITS_THE_SITE_DOES_NOT_STATE = (
     "How do I find the rates page?",
     "When will Dupaco close?",
     "When will the certificate special end?",
+    "When are holidays?",
+    "When will scholarship winners be announced?",
+    "When is the Dupaco Foundation scholarship?",
     "Is the Coralville Branch open yet?",
     "Can I pay my mortgage at a branch?",
 )

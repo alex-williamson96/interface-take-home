@@ -199,6 +199,23 @@ class AnswersFromPageText(unittest.TestCase):
         self.assertTrue(system.answer("When does the Galena branch close?").text.startswith(said))
         self.assertNotIn("passed", system.answer("When did the Galena branch close?").text)
 
+    def test_a_word_asked_about_only_after_the_date_does_not_make_it_that_date(self):
+        page = article("June 1, 2026", "Studies must begin in 2027, and scholarship winners are told by mail.")
+        answer = system_with_pages((NEWS_URL + "a", page)).answer("When will scholarship winners be announced?")
+        self.assertFalse(answer.confident)
+
+    def test_one_word_shared_with_a_longer_question_does_not_make_it_that_date(self):
+        page = article("June 1, 2026", "The Galena branch ribbon cutting gift drive was held June 1, 2025.")
+        self.assertFalse(system_with_pages((NEWS_URL + "a", page)).answer("When is the Galena branch ribbon cutting dinner speech?").confident)
+
+    def test_a_question_asking_the_date_of_one_unnamed_word_refuses(self):
+        page = article("June 1, 2026", "Members saved $5 million through Holiday Club savings in 2025.")
+        self.assertFalse(system_with_pages((NEWS_URL + "a", page)).answer("When are holidays?").confident)
+
+    def test_a_heading_with_no_lowercase_word_does_not_state_a_date(self):
+        page = article("June 1, 2026", "2026 Galena Scholarship Recipients Jane Doe")
+        self.assertFalse(system_with_pages((NEWS_URL + "a", page)).answer("When is the Galena scholarship?").confident)
+
     def test_a_date_sentence_sharing_only_the_name_does_not_answer_what_was_asked(self):
         page = article("June 1, 2026", "The Hoefer Foundation was established in 2011.")
         answer = system_with_pages((NEWS_URL + "a", page)).answer("When does the Hoefer Foundation scholarship application open?")
