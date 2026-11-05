@@ -1,15 +1,16 @@
 from __future__ import annotations
 
 import re
-from collections import defaultdict
+from collections import Counter, defaultdict
 from typing import Optional
 
 from contract import Conflict, Source
-from prose import PassageIndex
+from prose import PassageIndex, words_in
 from rate_facts import RateFact, is_rate_page, page_path, stem, words_of
 
 NUMBER = re.compile(r"\d+(?:\.\d+)?")
 VALUE_NAMES = {"apy": "APY", "apr": "APR", "rate": "rate", "dividend": "dividend", "promo_apy": "promotional APY"}
+FOUNDATION_NAME = set(words_in("foundation"))
 WORDS_EVERY_PRODUCT_IN_A_FAMILY_SHARES = frozenset(stem(word) for word in "money market checking savings account".split())
 
 
@@ -30,16 +31,33 @@ def rate_conflicts(facts: tuple[RateFact, ...], snapshot_id: str) -> list[Confli
 
 
 def branch_count_conflict(passages: PassageIndex, snapshot_id: str) -> Optional[Conflict]:
-    newest, undated = passages.branch_count_statements()
-    if newest is None or not undated or all(count == newest[0] for count, _ in undated):
+    newest, others = passages.branch_count_statements()
+    if newest is None or all(count == newest[0] for count, _ in others):
         return None
-    statements = [newest, *undated]
+    one_statement_per_count = {count: passage for count, passage in reversed(others)}
+    one_statement_per_count[newest[0]] = newest[1]
     return Conflict(
         topic="number of branches",
-        values=list(dict.fromkeys(count for count, _ in statements)),
-        sources=[Source(url=p.url, snapshot_id=snapshot_id, quote=p.text) for _, p in statements],
+        values=[newest[0], *(count for count in dict.fromkeys(count for count, _ in others) if count != newest[0])],
+        sources=[Source(url=p.url, snapshot_id=snapshot_id, quote=p.text) for p in one_statement_per_count.values()],
         resolution=newest[0],
-        reason=f"The newest dated statement ({newest[1].published}) wins over an undated page.",
+        reason=f"The newest dated statement ({newest[1].published}) wins over older and undated pages.",
+    )
+
+
+def foundation_founding_conflict(passages: PassageIndex, snapshot_id: str) -> Optional[Conflict]:
+    statements = passages.founding_year_statements(FOUNDATION_NAME)
+    pages_stating = Counter(year for year, _ in statements)
+    if len(pages_stating) < 2:
+        return None
+    most_stated = pages_stating.most_common(1)[0][0]
+    one_statement_per_year = {year: passage for year, passage in statements}
+    return Conflict(
+        topic="year the Dupaco Foundation was founded",
+        values=list(pages_stating),
+        sources=[Source(url=p.url, snapshot_id=snapshot_id, quote=p.text) for p in one_statement_per_year.values()],
+        resolution=most_stated,
+        reason=f"{pages_stating[most_stated]} of {len(statements)} statements give {most_stated}.",
     )
 
 

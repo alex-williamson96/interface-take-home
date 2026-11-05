@@ -496,14 +496,15 @@ class Conflicts(unittest.TestCase):
         system.ingest(snapshot("2026-09-28", (RATES_URL, self.rows("| Mortgage 30-Year Fixed | 7.25% | 7.29% |"))))
         self.assertEqual(system.conflicts(), [])
 
-    def test_an_undated_page_disagreeing_with_the_newest_branch_count_is_a_conflict(self):
+    def test_undated_and_older_pages_disagreeing_with_the_newest_branch_count_are_one_conflict(self):
         found = system_with_pages(
             ("https://www.dupaco.com/about", "Leaders across our 18 branches work together."),
             (NEWS_URL + "old", article("March 1, 2026", "It has 23 branch office locations.")),
             (NEWS_URL + "new", article("May 1, 2026", "It has 22 branch office locations.")),
         ).conflicts()
+        self.assertEqual(len(found), 1)
         self.assertEqual(found[0].resolution, "22")
-        self.assertEqual(set(found[0].values), {"18", "22"})
+        self.assertEqual(set(found[0].values), {"18", "22", "23"})
 
 
 class AnswerBehaviour(unittest.TestCase):

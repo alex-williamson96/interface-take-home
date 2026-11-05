@@ -386,15 +386,18 @@ class PassageIndex:
         lead = leads[0] if self._has_passed(found.text) else leads[1]
         return replace(found, text=f"{lead} {found.text}")
 
-    def _disagreement_about_founding(self, names: set[str]) -> Optional[str]:
-        years = {
-            year
+    def founding_year_statements(self, names: set[str]) -> list[tuple[str, Passage]]:
+        return [
+            (year, passage)
             for passage in self._passages
             if names <= passage.words
             for sentence in SENTENCE_END.split(passage.text)
             if names <= set(words_in(sentence))
             for year in FOUNDING_YEAR.findall(sentence)
-        }
+        ]
+
+    def _disagreement_about_founding(self, names: set[str]) -> Optional[str]:
+        years = {year for year, _ in self.founding_year_statements(names)}
         if len(years) < 2:
             return None
         return f"The site gives more than one year for this: {', '.join(sorted(years))}. This answer uses the best matching page."
@@ -545,7 +548,8 @@ class PassageIndex:
         undated_site_pages = [
             statement for statement in statements if not statement[1].has_its_own_date and statement[1].trust == TRUST_OF_SITE_PAGE
         ]
-        return newest, undated_site_pages
+        newest_first = sorted(dated, key=lambda statement: statement[1].published, reverse=True)
+        return newest, undated_site_pages + newest_first
 
     def _pages_stating(self, value: str, best: Passage) -> tuple[str, ...]:
         stating = [p for p in self._passages if value in p.text]

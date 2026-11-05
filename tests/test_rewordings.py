@@ -252,7 +252,8 @@ class RewordingsAgainstRealSnapshots(unittest.TestCase):
         self.assertIn("7.29%", conflict_naming("6.037%", "5.954%", "7.29%").resolution)
         self.assertIn("5.39%", conflict_naming("5.34%", "5.39%").resolution)
         self.assertIn("2.50%", conflict_naming("3.00%", "2.50%").resolution)
-        self.assertEqual(conflict_naming("18", "22").resolution, "22")
+        self.assertEqual(conflict_naming("18", "22", "23", "24").resolution, "22")
+        self.assertEqual(conflict_naming("2011", "2012").resolution, "2011")
         self.assertNotIn("243597822", " ".join(value for c in found for value in c.values))
         self.assertLessEqual(len(found), FEWEST_CONFLICTS_WORTH_REVIEWING_BY_HAND)
 

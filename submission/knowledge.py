@@ -4,7 +4,7 @@ from collections import Counter
 from dataclasses import dataclass
 from typing import Optional
 
-from conflicts import branch_count_conflict, rate_conflicts
+from conflicts import branch_count_conflict, foundation_founding_conflict, rate_conflicts
 from contract import Answer, Conflict, Snapshot, Source
 from prose import EXCLUDED_PAGE_PREFIXES, Found, PassageIndex
 from question import (
@@ -72,8 +72,11 @@ class KnowledgeSystem:
             return []
         latest = self._snapshots[-1]
         found = rate_conflicts(latest.facts_on_every_page, latest.snapshot_id)
-        branches = branch_count_conflict(latest.passages, latest.snapshot_id)
-        return found + [branches] if branches else found
+        statements_that_disagree = (
+            branch_count_conflict(latest.passages, latest.snapshot_id),
+            foundation_founding_conflict(latest.passages, latest.snapshot_id),
+        )
+        return found + [conflict for conflict in statements_that_disagree if conflict]
 
     def _snapshot_for(self, as_of: Optional[str]) -> Optional[IndexedSnapshot]:
         eligible = [s for s in self._snapshots if as_of is None or s.taken_on <= as_of]
