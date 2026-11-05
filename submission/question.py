@@ -21,6 +21,7 @@ FEE_ASKED = re.compile(
     r"|\bhow much\b.*\b(?:lost|stolen|replac\w*)\b|\bcosts? to replace\b",
     re.I,
 )
+PRICE_WITHOUT_THE_WORD_FEE = re.compile(r"\bcosts?\b|\bhow much\b", re.I)
 REACHING_SOMEONE = re.compile(
     r"\bphone numbers?\b|\bwho\b.*\b(?:call|talk to|speak)\b|\b(?:call|contact)\b.*\babout\b|\bnumber\b.*\bcall\b",
     re.I,
@@ -184,6 +185,10 @@ def family_of_rates_asked_about(question: str) -> Optional[str]:
 
 def asks_about_a_fee(question: str) -> bool:
     return bool(FEE_ASKED.search(question))
+
+
+def asks_a_price(question: str) -> bool:
+    return bool(PRICE_WITHOUT_THE_WORD_FEE.search(question))
 
 
 def search_may_answer(question: str) -> bool:

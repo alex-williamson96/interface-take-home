@@ -10,6 +10,7 @@ from prose import EXCLUDED_PAGE_PREFIXES, Found, PassageIndex
 from question import (
     BUSINESS_ASKED,
     RateQuestion,
+    asks_a_price,
     asks_about_a_fee,
     asks_for_a_link,
     family_of_rates_asked_about,
@@ -88,8 +89,11 @@ def refusal() -> Answer:
 
 
 def _answer_from_search(question: str, snapshot: IndexedSnapshot) -> Answer:
+    fee_on_the_schedule = snapshot.passages.fee_on_the_schedule(question) if asks_a_price(question) else None
     if asks_about_a_fee(question):
         found = snapshot.passages.fee_for(question)
+    elif fee_on_the_schedule:
+        found = fee_on_the_schedule
     elif not search_may_answer(question):
         return refusal()
     elif asks_for_a_link(question):

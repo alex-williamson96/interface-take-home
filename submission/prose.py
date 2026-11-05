@@ -73,12 +73,18 @@ WORDS_THAT_DO_NOT_SEARCH_TEXT = """
 """
 
 LOCATOR_PATH = "/contact"
-FEE_SCHEDULE_PATH_PART = "fee-schedule"
+FEE_SCHEDULE_PATH = re.compile(r"fee-schedule|^/fees?$")
 FEE_AMOUNT = re.compile(r"\$\d|\d%|\bfree\b", re.I)
+FEE_ROW_WRITTEN_AS_A_LINE = re.compile(r"^(?P<label>[A-Z][^$|]*?):?\s+(?P<amount>(?:\$\d|Free\b|\d+% of)[^|]*)$")
+A_SENTENCE_NOT_AN_AMOUNT = re.compile(r"\.(?:\s|$)")
+FEE_WORD = re.compile(r"\bfees?\b", re.I)
+FEE_SECTION_HEADING = re.compile(r"(?:Services|Charges|Fees)(?: Consumer| Business)?$")
+CARD_PAGE_PATH_PART = "credit-cards"
 FOOTNOTE_AFTER_THE_AMOUNT = re.compile(r"\s+\*.*$")
 FEE_ROWS_IN_AN_ANSWER = 4
 HOURS_ASKED = re.compile(r"\bhours?\b", re.I)
 OPENING_TIME_ASKED = re.compile(r"\bwhen (?:does|do|is)\b.*\b(?:branch(?:es)?|lobby|drive-up)\b.*\bopen\b", re.I)
+DATE_WORDS_IN_A_FEE_QUESTION = re.compile(r"\b(?:in|on|as of)?\s*[A-Z][a-z]+\.? (?:\d{1,2},? )?20\d\d\b")
 TIME_OF_DAY_ASKED = re.compile(r"\bwhat time\b.*\b(?:open|close)\b", re.I)
 CLOSING_TIME_ASKED = re.compile(r"\bwhen (?:does|do|is)\b.*\b(?:branch(?:es)?|lobby|drive-up)\b.*\bclose\b", re.I)
 A_BRANCH_ASKED_ABOUT = re.compile(r"\b(?:branch(?:es)?|locations?)\b", re.I)
@@ -207,6 +213,7 @@ WORDS_THAT_NAME_NOTHING_ALONE = WORDS_ANY_BRANCH_SHARES | WORDS_IN_DUPACOS_OWN_N
 CLOSE = _without_ending(stem("close"))
 WORDS_ROUTING_IS_FOUND_BY = frozenset(words_in("routing"))
 WORDS_THAT_ASK_FOR_A_FEE = frozenset(words_in("fee cost charge charged price penalty amount"))
+WORDS_NAMING_A_CARD = frozenset(words_in("platinum rewards visa credit card business"))
 BUSINESS = next(iter(words_in("business")))
 NO_IF_CLOSED = ("No.", "Yes, for now.")
 YES_IF_CLOSED = ("Yes.", "Not yet.")
@@ -293,9 +300,10 @@ class PassageIndex:
             if path in seen_paths or path.startswith(EXCLUDED_PAGE_PREFIXES) or is_listing_page(path):
                 continue
             seen_paths.add(path)
-            if FEE_SCHEDULE_PATH_PART in path:
+            if FEE_SCHEDULE_PATH.search(path):
                 for row in _fee_rows_in(page.markdown, page.url):
-                    self._fee_rows.setdefault(row.label, row)
+                    self._keep_the_cleanest_label(row)
+                continue
             title_words = frozenset(words_in(page.title) + words_in(path.replace("-", " ").replace("/", " ")))
             own_date = published_date(page.markdown)
             published = own_date or taken_on
@@ -604,8 +612,18 @@ class PassageIndex:
         sentence, _, passage = max(statements, key=strength)
         return Found(sentence, (passage.url,), passage.text)
 
+    def _keep_the_cleanest_label(self, row: FeeRow) -> None:
+        same_letters = "".join(sorted(re.sub(r"\W", "", row.label.lower())))
+        kept = self._fee_rows.get(same_letters)
+        if kept is None or len(row.label) < len(kept.label):
+            self._fee_rows[same_letters] = row
+
     def fee_for(self, question: str) -> Optional[Found]:
-        terms = _search_terms(question) - WORDS_THAT_ASK_FOR_A_FEE
+        terms = _search_terms(DATE_WORDS_IN_A_FEE_QUESTION.sub(" ", question)) - WORDS_THAT_ASK_FOR_A_FEE
+        return self.fee_on_the_schedule(question) or self._card_fee_in_page_text(terms)
+
+    def fee_on_the_schedule(self, question: str) -> Optional[Found]:
+        terms = _search_terms(DATE_WORDS_IN_A_FEE_QUESTION.sub(" ", question)) - WORDS_THAT_ASK_FOR_A_FEE
         stating = [row for row in self._fee_rows.values() if terms and terms <= row.words]
         if BUSINESS not in terms and any(BUSINESS not in row.words for row in stating):
             stating = [row for row in stating if BUSINESS not in row.words]
@@ -614,6 +632,18 @@ class PassageIndex:
         chosen = stating[:FEE_ROWS_IN_AN_ANSWER]
         listed = "; ".join(f"{row.label}: {row.amount}" for row in chosen)
         return Found(f"{listed}.", (chosen[0].url,), listed)
+
+    def _card_fee_in_page_text(self, terms: set[str]) -> Optional[Found]:
+        asked = terms - WORDS_NAMING_A_CARD
+        if not asked:
+            return None
+        for passage in self._passages:
+            if CARD_PAGE_PATH_PART not in page_path(passage.url) or not asked <= passage.words:
+                continue
+            for clause in re.split(r"(?<=[.;])\s+", passage.text):
+                if FEE_WORD.search(clause) and asked <= set(words_in(clause)):
+                    return Found(clause.rstrip(";") + ("" if clause.endswith(".") else "."), (passage.url,), passage.text)
+        return None
 
     def _phone_answer(self, ranked: list[tuple[float, Passage]], terms: set[str]) -> Optional[Found]:
         stating = [passage for _, passage in ranked if passage.trust == TRUST_OF_SITE_PAGE]
@@ -673,13 +703,34 @@ class PassageIndex:
         return Found(page, (page,), labels[page])
 
 
+def _fee_label_and_amount(line: str) -> Optional[tuple[str, str]]:
+    if line.startswith("|"):
+        cells = [html.unescape(html.unescape(cell)).strip() for cell in line.strip().strip("|").split("|")]
+        return (cells[0], cells[1]) if len(cells) >= 2 and FEE_AMOUNT.search(cells[1]) else None
+    written_out = FEE_ROW_WRITTEN_AS_A_LINE.match(line.replace("\\", "").replace("_", "").strip())
+    if not written_out or A_SENTENCE_NOT_AN_AMOUNT.search(written_out.group("amount")):
+        return None
+    return written_out.group("label"), written_out.group("amount")
+
+
+def _fee_section_heading(line: str) -> Optional[str]:
+    heading = line.strip().strip("|").split("|")[0].replace("*", "").strip()
+    return heading if FEE_SECTION_HEADING.search(heading) else None
+
+
 def _fee_rows_in(markdown: str, url: str) -> list[FeeRow]:
     rows = []
+    in_a_business_section = False
     for line in markdown.splitlines():
-        cells = [html.unescape(html.unescape(cell)).strip() for cell in line.strip().strip("|").split("|")]
-        if line.startswith("|") and len(cells) >= 2 and FEE_AMOUNT.search(cells[1]):
-            label = cells[0]
-            rows.append(FeeRow(label, FOOTNOTE_AFTER_THE_AMOUNT.sub("", cells[1]), frozenset(words_in(label)), url))
+        found = _fee_label_and_amount(line)
+        heading = None if found else _fee_section_heading(line)
+        if heading:
+            in_a_business_section = heading.endswith("Business")
+        if found:
+            label, amount = found
+            if in_a_business_section and BUSINESS not in words_in(label):
+                label = f"Business: {label}"
+            rows.append(FeeRow(label, FOOTNOTE_AFTER_THE_AMOUNT.sub("", amount), frozenset(words_in(label)), url))
     return rows
 
 

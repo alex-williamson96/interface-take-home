@@ -148,6 +148,26 @@ class AnswersFromPageText(unittest.TestCase):
         for question in ("What is the construction loan rate?", "What is the overdraft fee?"):
             self.assertFalse(system.answer(question).confident, question)
 
+    def test_a_fee_schedule_is_read_as_a_table_a_line_or_a_labelled_line(self):
+        schedule_url = "https://www.dupaco.com/hubfs/fee-schedule.pdf"
+        for schedule in (
+            "|Stop payment (check)|$30.00* per item|",
+            "Stop payment (check) $30.00\\* per item",
+            "Stop payment (check): $30.00",
+        ):
+            with self.subTest(schedule):
+                self.assertIn("$30.00", system_with_pages((schedule_url, schedule)).answer("What is the stop payment fee?").text)
+
+    def test_a_fee_schedule_is_not_read_back_as_page_text(self):
+        schedule = "Stop payment $30.00\n\nSafe deposit box $25.00\n\nRolled coin $0.10"
+        answer = system_with_pages(("https://www.dupaco.com/hubfs/fee-schedule.pdf", schedule)).answer("Where is my safe deposit box key?")
+        self.assertNotIn("$30.00", answer.text)
+
+    def test_a_sentence_in_a_fee_schedule_is_not_a_fee(self):
+        schedule = "You will not be charged an overdraft fee if we pay less than $5.00. Maximum charge of one fee per day."
+        answer = system_with_pages(("https://www.dupaco.com/hubfs/fee-schedule.pdf", schedule)).answer("What is the overdraft fee?")
+        self.assertFalse(answer.confident)
+
     def test_a_single_word_match_in_body_text_refuses(self):
         page = article("June 1, 2026", "Protecting your pet is no joke.")
         self.assertFalse(system_with_pages((NEWS_URL + "a", page)).answer("Tell me a joke").confident)

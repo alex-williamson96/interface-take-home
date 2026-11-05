@@ -263,6 +263,23 @@ class RewordingsAgainstRealSnapshots(unittest.TestCase):
     def test_a_what_time_question_about_a_branch_without_hours_is_refused(self):
         self.assertFalse(self.system.answer("What time does the Key West branch close?").confident)
 
+    def test_a_fee_is_answered_on_every_date_however_the_schedule_is_formatted(self):
+        for as_of in ("2026-05-12", "2026-06-09", "2026-08-27", "2026-09-28"):
+            with self.subTest(as_of):
+                self.assertIn("$30.00", self.system.answer("What is the stop payment fee?", as_of=as_of).text)
+
+    def test_a_price_question_without_the_word_fee_reaches_the_schedule(self):
+        self.assertIn("$55.00", self.system.answer("What does an international wire cost?").text)
+        self.assertEqual(self.system.answer("How much is a money order?").text.count("$"), 1)
+
+    def test_a_fee_is_not_taken_from_another_product_or_a_business_section_for_a_personal_question(self):
+        self.assertFalse(self.system.answer("What's the monthly fee on Free Checking?").confident)
+        self.assertTrue(self.system.answer("Is there a monthly fee on checking?").text.startswith("Business: "))
+
+    def test_a_card_fee_the_schedule_leaves_out_comes_from_the_card_page(self):
+        self.assertIn("$10.00", self.system.answer("What is the cash advance fee?").text)
+        self.assertIn("no annual fee", self.system.answer("What is the annual fee on the Platinum Visa?").text.lower())
+
     def test_a_past_tense_question_is_not_answered_with_a_date_still_ahead(self):
         self.assertNotIn("2027", self.system.answer("When were the Foundation grants awarded?").text)
 
