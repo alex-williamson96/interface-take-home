@@ -72,6 +72,15 @@ FIRST_OR_LAST_OF_A_KIND = re.compile(r"\b(?:first|last|oldest|newest|original)\s
 BYLINE = re.compile(r"Written by .*?\|\s*([A-Z][a-z]{2}) (\d{1,2}), (\d{4}) [\d:]+ [AP]M")
 DATE_ASKED = re.compile(r"\bwhen\b|\b(?:what|which) (?:date|year)\b|\bstill open\b", re.I)
 ADDRESS_ASKED = re.compile(r"\baddress\b", re.I)
+ATM_ASKED = re.compile(r"\batms?\b", re.I)
+DUPACO_BRANCH_LISTING = re.compile(r"\bDupaco Branch\b")
+DUPACO_ORIGIN_ASKED = re.compile(
+    r"^\s*(?:when|what year)\b.*\b(?:did|was)\s+(?:dupaco|the credit union)\s+(?:get\s+)?"
+    r"(?:start|started|begin|open|opened)\s*\??\s*$"
+    r"|^\s*how (?:old is|long has|many years has)\s+dupaco\b",
+    re.I,
+)
+WHEN_DUPACO_WAS_FOUNDED = "When was Dupaco founded?"
 ROUTING_ASKED = re.compile(r"\brouting\b", re.I)
 HOW_TO_REACH_ASKED = re.compile(
     r"\bphone (?:numbers?|for)\b|\b(?:your|dupaco's) phone\b|\bcontact information\b"
@@ -144,6 +153,10 @@ def words_in(text: str) -> list[str]:
 
 WORDS_THAT_DO_NOT_SEARCH = frozenset(words_in(WORDS_THAT_DO_NOT_SEARCH_TEXT))
 WORDS_A_SHAPE_ALREADY_SATISFIES = frozenset(words_in("address phone number year date"))
+WORDS_ANY_BRANCH_SHARES = frozenset(words_in("branch location"))
+WORDS_IN_DUPACOS_OWN_NAME = frozenset(words_in("community credit union"))
+WORDS_THAT_NAME_NOTHING_ALONE = WORDS_ANY_BRANCH_SHARES | WORDS_IN_DUPACOS_OWN_NAME
+CLOSE = _without_ending(stem("close"))
 WORDS_NAMING_A_KIND_OF_HOURS = frozenset(words_in("lobby drive"))
 WORDS_ABOUT_REACHING_DUPACO = frozenset(
     words_in("call contact information update change customer member service support main general credit union talk speak reach someone")
@@ -296,9 +309,15 @@ class PassageIndex:
         return ranked
 
     def search(self, question: str) -> Optional[Found]:
+        if DUPACO_ORIGIN_ASKED.search(question):
+            return self._search_as_worded(WHEN_DUPACO_WAS_FOUNDED)
         still_open = STILL_OPEN_ASKED.search(question)
-        if still_open and (_names_in(question) or A_BRANCH_ASKED_ABOUT.search(question)):
-            return self._is_it_still_open(still_open.group(1), bool(_names_in(question)))
+        if still_open:
+            place = still_open.group(1)
+            if _names_in(_when_will_it_close(place)):
+                return self._is_it_still_open(place)
+            if A_BRANCH_ASKED_ABOUT.search(place):
+                return self._which_branch()
         if not (DATE_ASKED.search(question) and FOUNDING_ASKED.search(question)):
             return self._search_as_worded(question)
         names = _names_in(question)
@@ -307,11 +326,13 @@ class PassageIndex:
         found = self._search_as_worded(question) or self._search_as_worded(FOUNDING_ASKED.sub("established", question))
         return found and replace(found, conflict_note=self._disagreement_about_founding(names))
 
-    def _is_it_still_open(self, place: str, named: bool) -> Optional[Found]:
-        found = self._search_as_worded(f"When will {place} close?")
-        if not named or not found:
-            return found
-        if not CLOSING_STATED.search(found.text):
+    def _which_branch(self) -> Found:
+        locator = self._locator_url()
+        return Found("That depends on the branch; which branch do you need?", (locator,) if locator else (), "")
+
+    def _is_it_still_open(self, place: str) -> Optional[Found]:
+        found = self._search_as_worded(_when_will_it_close(place))
+        if not found or not CLOSING_STATED.search(found.text):
             return None
         lead = "No." if self._has_passed(found.text) else "Yes, for now."
         return replace(found, text=f"{lead} {found.text}")
@@ -337,6 +358,8 @@ class PassageIndex:
         fewest_body_matches = 1 if shape else FEWEST_MATCHED_TERMS_WITHOUT_A_TITLE_MATCH
         terms = _search_terms(question) - (WORDS_A_SHAPE_ALREADY_SATISFIES if shape else frozenset())
         ranked = self._ranked(terms, names, shape, fewest_body_matches)
+        if shape is ADDRESS and not ATM_ASKED.search(question):
+            ranked = [scored for scored in ranked if DUPACO_BRANCH_LISTING.search(scored[1].text)]
         if shape is PHONE:
             return self._phone_answer(ranked, terms)
         if not ranked:
@@ -374,7 +397,9 @@ class PassageIndex:
             if terms <= passage.searchable_words and passage.trust > TRUST_OF_LEAST_TRUSTED
         ]
         titled_with_it = [passage for passage in stating_it if terms <= passage.title_words]
-        by_page = {passage.url: passage for passage in reversed(titled_with_it or stating_it)}
+        by_page: dict[str, Passage] = {}
+        for passage in titled_with_it or stating_it:
+            by_page.setdefault(passage.url, passage)
         if not by_page:
             return None
         pages = list(by_page.values())[:SCHEDULES_IN_AN_ANSWER]
@@ -397,7 +422,7 @@ class PassageIndex:
         return _answer_from_page(question, passage, self._passages_of[passage.url], set(), DATE_OR_YEAR)
 
     def _most_recent_statement(self, question: str, names: set[str], ranked: list[tuple[float, Passage]]) -> Optional[Found]:
-        asked = _search_terms(question) - names
+        asked = _asked_beyond_the_name(question, names)
         statements = [
             (sentence, passage)
             for _, passage in ranked
@@ -532,7 +557,7 @@ def _names_in(question: str) -> set[str]:
     names = set()
     for capitalized in CAPITALIZED_AFTER_FIRST_WORD.findall(question):
         for word in words_in(capitalized):
-            if word not in WORDS_THAT_DO_NOT_SEARCH:
+            if word not in WORDS_THAT_DO_NOT_SEARCH and word not in WORDS_THAT_NAME_NOTHING_ALONE:
                 names.add(word)
     return names
 
@@ -567,10 +592,11 @@ def _belongs_beside_the_best_passage(sentence: str, names: set[str], shape: Opti
 
 def _sentence_stating_the_date(question: str, sentences: list[str], names: set[str]) -> str:
     terms = _search_terms(question)
+    asked = _asked_beyond_the_name(question, names)
 
-    def strength(sentence: str) -> tuple[int, int, bool]:
+    def strength(sentence: str) -> tuple[bool, int, int, bool]:
         words = set(words_in(sentence))
-        return len((terms - names) & words), len(terms & words), bool(FULL_DATE.search(sentence))
+        return _mentions(sentence, asked), len(asked & words), len(terms & words), bool(FULL_DATE.search(sentence))
 
     return max(sentences, key=strength)
 
@@ -586,8 +612,18 @@ def _latest_date_in(sentence: str) -> tuple[str, str]:
     return f"{year}-12-31", year
 
 
+def _asked_beyond_the_name(question: str, names: set[str]) -> set[str]:
+    return _search_terms(question) - names - WORDS_A_SHAPE_ALREADY_SATISFIES - WORDS_ANY_BRANCH_SHARES
+
+
 def _mentions(sentence: str, asked: set[str]) -> bool:
-    return not asked or bool(asked & set(words_in(sentence)))
+    if not asked or asked & set(words_in(sentence)):
+        return True
+    return CLOSE in asked and bool(CLOSING_STATED.search(sentence))
+
+
+def _when_will_it_close(place: str) -> str:
+    return f"When will {place} close?"
 
 
 def _through_the_date(sentence: str) -> str:
@@ -613,7 +649,7 @@ def _answer_from_page(
         return None
     if shape is DATE_OR_YEAR:
         sentence = _sentence_stating_the_date(question, list(passage_of), names)
-        if not _mentions(sentence, _search_terms(question) - names):
+        if not _mentions(sentence, _asked_beyond_the_name(question, names)):
             return None
         return Found(_through_the_date(sentence), (best.url,), passage_of[sentence].text)
     worth_keeping = [s for s in passage_of if overlap[s] >= best_overlap * LOWEST_SHARE_OF_BEST_SENTENCE_KEPT]

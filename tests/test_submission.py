@@ -268,6 +268,16 @@ class AnswersFromPageText(unittest.TestCase):
         self.assertIn("Galena branch closing", answer)
         self.assertIn("Asbury branch closing", answer)
 
+    def test_which_branch_keeps_the_best_matching_pages_when_more_match_than_it_lists(self):
+        site_page_that_ranks_above_news = "https://www.dupaco.com/about/closing"
+        def page(url: str, number: int) -> Page:
+            return Page(url, f"Branch closing {number}", article("June 1, 2026", f"This branch closed on March {number}, 2026."), "2026-09-28")
+        pages = [page(f"{NEWS_URL}{number}", number) for number in range(1, 6)]
+        pages.append(page(site_page_that_ranks_above_news, 6))
+        system = KnowledgeSystem()
+        system.ingest(Snapshot("s", "2026-09-28", pages))
+        self.assertIn(site_page_that_ranks_above_news, [source.url for source in system.answer("When did the branch close?").sources])
+
     def test_when_a_branch_opens_is_answered_with_its_hours(self):
         system = system_with_pages((NEWS_URL + "galena", HOURS_ARTICLE))
         for question in ("When does the branch open?", "When does the Galena branch open?"):

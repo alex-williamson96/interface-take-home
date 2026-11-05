@@ -62,6 +62,25 @@ DATES_THE_SITE_STATES = (
     ("When was the Dupaco Foundation established?", "2011"),
     ("When was the Dupaco Foundation founded?", "2011"),
     ("When is the next Gift of Innovation grant cycle?", "2026"),
+    ("What year did Dupaco begin?", "1948"),
+    ("What year did Dupaco open?", "1948"),
+    ("When did Dupaco start?", "1948"),
+    ("How old is Dupaco?", "1948"),
+    ("When was Dupaco Credit Union established?", "1948"),
+)
+
+DATE_SENTENCES_SHARING_ONLY_A_NAME = (
+    "When did the Key West branch open?",
+    "When was the Key West branch built?",
+    "When does the Key West branch close?",
+    "When did the Sycamore Street branch open?",
+)
+
+QUESTIONS_NAMING_NO_BRANCH_THAT_MUST_NOT_BE_TOLD_ONE_CLOSED = (
+    "Are you still open on Saturday?",
+    "Is the Branch still open?",
+    "Is the Dupaco Branch still open?",
+    "Are your branches still open?",
 )
 
 FEWEST_CONFLICTS_WORTH_REVIEWING_BY_HAND = 10
@@ -130,6 +149,20 @@ class RewordingsAgainstRealSnapshots(unittest.TestCase):
         ):
             with self.subTest(question):
                 self.assertTrue(self.system.answer(question).text.startswith(opening))
+
+    def test_a_question_naming_no_branch_is_not_told_one_closed(self):
+        for question in QUESTIONS_NAMING_NO_BRANCH_THAT_MUST_NOT_BE_TOLD_ONE_CLOSED:
+            with self.subTest(question):
+                self.assertNotIn("March 31, 2026", self.system.answer(question).text)
+
+    def test_a_date_sentence_sharing_only_a_name_is_refused(self):
+        for question in DATE_SENTENCES_SHARING_ONLY_A_NAME:
+            with self.subTest(question):
+                self.assertFalse(self.system.answer(question).confident, self.system.answer(question).text)
+
+    def test_an_address_is_only_a_dupaco_branch_not_a_dealer_or_another_banks_atm(self):
+        self.assertEqual(self.system.answer("What is the Galena address?").text, "11375 Oldenburg Ln., Galena, IL, 61036.")
+        self.assertFalse(self.system.answer("What is the address of the Asbury branch?").confident)
 
     def test_the_annual_meeting_is_given_as_the_most_recent_one(self):
         answer = self.system.answer("When is the Dupaco annual meeting?").text
