@@ -11,22 +11,24 @@ from rate_facts import RateFact, is_rate_page, page_path, stem, words_of
 NUMBER = re.compile(r"\d+(?:\.\d+)?")
 VALUE_NAMES = {"apy": "APY", "apr": "APR", "rate": "rate", "dividend": "dividend", "promo_apy": "promotional APY"}
 FOUNDATION_NAME = set(words_in("foundation"))
+FAMILIES_ASKED_ABOUT_ONE_TERM_AT_A_TIME = frozenset({"auto"})
 WORDS_EVERY_PRODUCT_IN_A_FAMILY_SHARES = frozenset(stem(word) for word in "money market checking savings account".split())
 
 
 def rate_conflicts(facts: tuple[RateFact, ...], snapshot_id: str) -> list[Conflict]:
     rate_page_rows = [fact for fact in facts if is_rate_page(page_path(fact.url))]
-    disagreeing_on_page: dict[tuple[str, str], list[tuple[RateFact, RateFact]]] = defaultdict(list)
+    disagreeing_on_page: dict[tuple[str, str, Optional[int]], list[tuple[RateFact, RateFact]]] = defaultdict(list)
     for fact in facts:
         current = _row_restated(fact, rate_page_rows)
         if current is not None and _differs(fact, current):
-            disagreeing_on_page[page_path(fact.url), fact.family].append((fact, current))
+            term_months = fact.term_months if fact.family in FAMILIES_ASKED_ABOUT_ONE_TERM_AT_A_TIME else None
+            disagreeing_on_page[page_path(fact.url), fact.family, term_months].append((fact, current))
     pages_repeating_it: dict[tuple, list[str]] = defaultdict(list)
-    for (path, family), pairs in disagreeing_on_page.items():
-        pages_repeating_it[family, _stale_values(pairs)].append(path)
+    for (path, family, term_months), pairs in disagreeing_on_page.items():
+        pages_repeating_it[family, term_months, _stale_values(pairs)].append(path)
     return [
-        _rate_conflict(paths, family, disagreeing_on_page[paths[0], family], snapshot_id)
-        for (family, _), paths in pages_repeating_it.items()
+        _rate_conflict(paths, family, term_months, disagreeing_on_page[paths[0], family, term_months], snapshot_id)
+        for (family, term_months, _), paths in pages_repeating_it.items()
     ]
 
 
@@ -109,14 +111,17 @@ def _numbers(value: str) -> tuple[float, ...]:
     return tuple(float(number) for number in NUMBER.findall(value))
 
 
-def _rate_conflict(paths: list[str], family: str, pairs: list[tuple[RateFact, RateFact]], snapshot_id: str) -> Conflict:
+def _rate_conflict(
+    paths: list[str], family: str, term_months: Optional[int], pairs: list[tuple[RateFact, RateFact]], snapshot_id: str
+) -> Conflict:
     showing = ", ".join(paths)
+    term = f"{term_months}-month " if term_months else ""
     names = list(dict.fromkeys(current.name for _, current in pairs))
     stale_values = [value for stale, _ in pairs for value in stale.values.values()]
     current_values = [value for _, current in pairs for value in current.values.values()]
     stale_row, current_row = pairs[0]
     return Conflict(
-        topic=f"{family.replace('_', ' ')} rates on {showing}: {'; '.join(names)}",
+        topic=f"{term}{family.replace('_', ' ')} rates on {showing}: {'; '.join(names)}",
         values=list(dict.fromkeys(stale_values + current_values)),
         sources=[
             Source(url=stale_row.url, snapshot_id=snapshot_id, quote=stale_row.row),

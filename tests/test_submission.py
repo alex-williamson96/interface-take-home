@@ -528,6 +528,18 @@ class Conflicts(unittest.TestCase):
         self.assertIn("/rates", found[0].reason)
         self.assertIn("/offer-lp", found[0].reason)
 
+    def test_auto_rates_conflict_per_term_while_mortgage_terms_stay_one_conflict(self):
+        auto = "Auto & Motorcycle Loans 2024-27 Model Year {} Months"
+        sheet = self.rows(f"| {auto.format(60)} | 5.39% | 5.39% |", f"| {auto.format(84)} | 5.59% | 5.59% |")
+        landing = self.rows(f"| {auto.format(60)} | 5.34% | 5.34% |", f"| {auto.format(84)} | 5.54% | 5.54% |")
+        by_term = {conflict.topic.split()[0]: conflict for conflict in self.conflicts_between(sheet, landing)}
+        self.assertEqual(set(by_term), {"60-month", "84-month"})
+        self.assertEqual(by_term["60-month"].values, ["5.34%", "5.39%"])
+
+        sheet = self.rows("| Mortgage 15-Year Fixed | 6.75% | 6.88% |", "| Mortgage 30-Year Fixed | 7.25% | 7.29% |")
+        landing = self.rows("| Mortgage 15-Year Fixed | 5.50% | 5.62% |", "| Mortgage 30-Year Fixed | 6.00% | 6.04% |")
+        self.assertEqual(len(self.conflicts_between(sheet, landing)), 1)
+
     def test_tiers_and_the_same_number_written_differently_are_not_conflicts(self):
         sheet = self.rows("| Mortgage 15-Year Fixed | 6.75% | 6.88% |", "| Mortgage 30-Year Fixed | 7.25% | 7.29% |")
         landing = self.rows("| Mortgage 15-Year Fixed | 6.750% | 6.880% |", "| Mortgage 30-Year Fixed | 7.250% | 7.290% |")
