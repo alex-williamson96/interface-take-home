@@ -402,6 +402,12 @@ def _newest_among_the_tied(ranked: list[tuple[float, Passage]]) -> Passage:
     return max(tied, key=lambda passage: passage.published)
 
 
+def _belongs_beside_the_best_passage(sentence: str, names: set[str], shape: Optional[re.Pattern]) -> bool:
+    if names:
+        return names <= set(words_in(sentence))
+    return shape is None
+
+
 def _answer_from_page(
     question: str, best: Passage, page: list[Passage], names: set[str], shape: Optional[re.Pattern]
 ) -> Optional[Found]:
@@ -410,8 +416,8 @@ def _answer_from_page(
     for passage in page:
         for sentence in SENTENCE_END.split(passage.display):
             shape_fits = shape is None or shape.search(sentence)
-            about_the_names = passage is best or names <= set(words_in(sentence))
-            if shape_fits and about_the_names and not sentence.endswith("?"):
+            belongs = passage is best or _belongs_beside_the_best_passage(sentence, names, shape)
+            if shape_fits and belongs and not sentence.endswith("?"):
                 passage_of.setdefault(sentence, passage)
     overlap = {sentence: len(terms & set(words_in(sentence))) for sentence in passage_of}
     best_overlap = max(overlap.values(), default=0)

@@ -178,6 +178,14 @@ class AnswersFromPageText(unittest.TestCase):
         self.assertIn("March 31, 2026", answer.text)
         self.assertNotIn("Asbury", answer.text)
 
+    def test_a_date_question_naming_nothing_states_one_date_not_every_date_on_the_page(self):
+        page = article(
+            "June 1, 2026",
+            "The Galena branch will close March 31, 2026.\n\n# Elsewhere\n\nThe Asbury branch will close June 1, 2026.",
+        )
+        answer = system_with_pages((NEWS_URL + "a", page)).answer("When will the branch close?").text
+        self.assertEqual(("Galena" in answer) + ("Asbury" in answer), 1, answer)
+
     def test_a_question_naming_nothing_can_answer_from_elsewhere_on_the_page_and_quotes_it(self):
         page = article(
             "June 1, 2026",
