@@ -186,7 +186,24 @@ def _unique_by_name_and_values(facts: list[RateFact]) -> list[RateFact]:
 
 
 def render_answer(question: RateQuestion, facts: list[RateFact]) -> str:
+    return _yes_or_no_lead(question, facts) + _render_list(question, facts)
+
+
+def _render_list(question: RateQuestion, facts: list[RateFact]) -> str:
     return "; ".join(f"{fact.name}: {_render_values(question, fact)}" for fact in facts) + "."
+
+
+def _yes_or_no_lead(question: RateQuestion, facts: list[RateFact]) -> str:
+    if question.percent_asked_about is None:
+        return ""
+    paying_it = [f for f in facts if _pays_exactly(f, question.percent_asked_about)]
+    if not paying_it:
+        return "No. Listed rates: "
+    return f"Yes: {_render_list(question, paying_it)} All listed rates: "
+
+
+def _pays_exactly(fact: RateFact, percent: float) -> bool:
+    return any(value.endswith("%") and "–" not in value and float(value[:-1]) == percent for value in fact.values.values())
 
 
 def _render_values(question: RateQuestion, fact: RateFact) -> str:

@@ -340,6 +340,13 @@ class QuestionWording(unittest.TestCase):
     def test_a_question_about_how_rates_work_refuses(self):
         self.assertFalse(system_with_two_dates().answer("Why did my CD rate go down?").confident)
 
+    def test_a_yes_or_no_percent_question_leads_with_the_answer(self):
+        system = system_with_two_dates()
+        yes = system.answer("Do any savings tiers pay 0.20% APY?").text
+        self.assertTrue(yes.startswith("Yes: Share Savings $25,000+: 0.20% APY."), yes)
+        no = system.answer("Do any savings tiers pay 0.35% APY?").text
+        self.assertTrue(no.startswith("No. "), no)
+
     def test_a_product_page_dated_after_the_rate_sheet_wins_when_they_disagree(self):
         answer = system_with_sheet_and_product_page("4/2/2026", "4/6/2026").answer("What is the 10 month CD APY?")
         self.assertIn("3.70%", answer.text)

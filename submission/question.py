@@ -31,6 +31,7 @@ BUSINESS_ASKED = re.compile(r"\bbusiness\b", re.I)
 BEST_ASKED = re.compile(r"\bbest\b", re.I)
 HIGHEST_ASKED = re.compile(r"\b(highest|top|(?:pays?|earns?) the most)\b", re.I)
 LOWEST_ASKED = re.compile(r"\b(lowest|cheapest)\b|(?<!\bat )\bleast\b", re.I)
+YES_OR_NO_ABOUT_A_PERCENT = re.compile(r"^\s*(?:do|does|is|are)\b.*?(\d+(?:\.\d+)?)\s*%", re.I)
 MODEL_YEAR = re.compile(r"\b(20\d\d)\b")
 AMOUNT = re.compile(r"(\$\s*)?\b(\d{1,3}(?:,\d{3})+|\d+)(\.\d+)?\s*(k|thousand|dollars)?\b", re.I)
 SHORTEST_BARE_AMOUNT_DIGITS = 5
@@ -113,6 +114,7 @@ class RateQuestion:
     wants_dividend: bool
     wants_highest: bool
     wants_lowest: bool
+    percent_asked_about: Optional[float] = None
 
 
 def parse_rate_question(question: str) -> Optional[RateQuestion]:
@@ -128,7 +130,9 @@ def parse_rate_question(question: str) -> Optional[RateQuestion]:
     expanded = _with_phrases_as_one_word(undated)
     words_in_order = [stem(word) for word in WORD.findall(expanded.lower())]
     capitals_name_products = family not in FAMILIES_WHERE_CAPITALS_ARE_VEHICLE_MAKES
+    percent_asked = YES_OR_NO_ABOUT_A_PERCENT.search(question)
     return RateQuestion(
+        percent_asked_about=float(percent_asked.group(1)) if percent_asked else None,
         family=family,
         words=frozenset(word for word in words_in_order if _can_narrow(word)),
         product_words=_words_before_a_product_noun(words_in_order)
