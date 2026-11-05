@@ -120,6 +120,8 @@ class RewordingsAgainstRealSnapshots(unittest.TestCase):
 
     def test_a_closed_branch_is_described_as_closed_however_the_question_is_worded(self):
         for question, opening in (
+            ("Is the Hy-Vee branch still open today (October 2026)?", "No. "),
+            ("Is the Asbury branch still open?", "No. "),
             ("When does the Hy-Vee branch close?", "That date has passed: "),
             ("When will the Hy-Vee branch close?", "That date has passed: "),
         ):

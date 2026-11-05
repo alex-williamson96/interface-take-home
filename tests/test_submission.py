@@ -204,6 +204,17 @@ class AnswersFromPageText(unittest.TestCase):
         self.assertNotIn("passed", answer)
         self.assertIn("June 1, 2021", answer)
 
+    def test_still_open_is_answered_no_after_a_stated_closing_and_yes_before_it(self):
+        def asked_with(closing: str) -> str:
+            page = article("June 1, 2025", f"The Galena branch will close {closing}.")
+            return system_with_pages((NEWS_URL + "a", page)).answer("Is the Galena branch still open?").text
+        self.assertTrue(asked_with("March 31, 2026").startswith("No. "))
+        self.assertTrue(asked_with("March 31, 2027").startswith("Yes, for now. "))
+
+    def test_still_open_refuses_when_the_site_states_no_closing(self):
+        page = article("June 1, 2025", "Dupaco opened the Galena branch in 2003.")
+        self.assertFalse(system_with_pages((NEWS_URL + "a", page)).answer("Is the Galena branch still open?").confident)
+
     def test_a_will_question_about_an_unnamed_branch_lists_only_upcoming_dates(self):
         closing = article("June 1, 2026", "This branch will close on {}.")
         def asked_with(*dates: str) -> str:

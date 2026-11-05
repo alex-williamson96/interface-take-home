@@ -85,7 +85,9 @@ CLAUSE_BREAK = re.compile(r",\s+(?!\d)")
 FULL_DATE = re.compile(rf"\b({'|'.join(MONTH_NUMBERS)})[a-z]*\.? (\d{{1,2}}), (20\d\d)\b")
 BARE_YEAR = re.compile(r"\b(?:19|20)\d\d\b")
 STILL_AHEAD_ASKED = re.compile(r"\bwill\b|\bgoing to\b|\b(?:does|do|is|are)\b", re.I)
+STILL_OPEN_ASKED = re.compile(r"^\s*(?:is|are)\s+(.+?)\s+still open\b", re.I)
 WRITTEN_AS_STILL_AHEAD = re.compile(r"\b(?:will|plans?|planned|expected|scheduled)\b", re.I)
+CLOSING_STATED = re.compile(r"\bclos(?:e|es|ed|ing|ure)\b|\blast day\b", re.I)
 TIME_OF_DAY = re.compile(r"\d(?::\d\d)?\s*[ap]\.?m\b", re.I)
 HOURS_BLOCK = re.compile(r"\b(?:lobby|drive-up)\b.*" + TIME_OF_DAY.pattern, re.I | re.S)
 SCHEDULE_START = re.compile(r"\b(?:lobby|drive-up)\b", re.I)
@@ -288,6 +290,9 @@ class PassageIndex:
         return ranked
 
     def search(self, question: str) -> Optional[Found]:
+        still_open = STILL_OPEN_ASKED.search(question)
+        if still_open and (_names_in(question) or A_BRANCH_ASKED_ABOUT.search(question)):
+            return self._is_it_still_open(still_open.group(1), bool(_names_in(question)))
         if not (DATE_ASKED.search(question) and FOUNDING_ASKED.search(question)):
             return self._search_as_worded(question)
         names = _names_in(question)
@@ -295,6 +300,15 @@ class PassageIndex:
             return self._search_as_worded(FOUNDING_ASKED.sub("founded", question))
         found = self._search_as_worded(question) or self._search_as_worded(FOUNDING_ASKED.sub("established", question))
         return found and replace(found, conflict_note=self._disagreement_about_founding(names))
+
+    def _is_it_still_open(self, place: str, named: bool) -> Optional[Found]:
+        found = self._search_as_worded(f"When will {place} close?")
+        if not named or not found:
+            return found
+        if not CLOSING_STATED.search(found.text):
+            return None
+        lead = "No." if self._has_passed(found.text) else "Yes, for now."
+        return replace(found, text=f"{lead} {found.text}")
 
     def _disagreement_about_founding(self, names: set[str]) -> Optional[str]:
         years = {
