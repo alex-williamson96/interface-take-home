@@ -45,8 +45,22 @@ NOTHING_ON_THE_SITE_ANSWERS_THESE = (
     "Can you give me the lobby hours for the Mullan Avenue branch?",
     "What is the address of the Chicago branch?",
     "What's the routing number for Chase?",
+    "When did Dupaco open its first branch?",
     "Who won the Super Bowl?",
     "Tell me a joke",
+)
+
+DATES_THE_SITE_STATES = (
+    ("When did the Asbury branch close?", "Oct. 1, 2024"),
+    ("When did the Asbury branch open?", "2003"),
+    ("When does the Hy-Vee branch close?", "March 31, 2026"),
+    ("What date is the Hy-Vee branch closing?", "March 31, 2026"),
+    ("When was Dupaco founded?", "1948"),
+    ("What year was Dupaco founded?", "1948"),
+    ("When was Dupaco established?", "1948"),
+    ("When was the Dupaco Foundation established?", "2011"),
+    ("When was the Dupaco Foundation founded?", "2011"),
+    ("When is the next Gift of Innovation grant cycle?", "2026"),
 )
 
 UNLISTED_PRODUCTS = (
@@ -82,6 +96,27 @@ class RewordingsAgainstRealSnapshots(unittest.TestCase):
                 plain_answer = self.system.answer(plain)
                 self.assertTrue(plain_answer.confident, plain)
                 self.assertEqual(self.system.answer(reworded).text, plain_answer.text)
+
+    def test_a_date_question_gets_the_date_the_site_states_in_one_sentence(self):
+        for question, date in DATES_THE_SITE_STATES:
+            with self.subTest(question):
+                answer = self.system.answer(question)
+                self.assertTrue(answer.confident)
+                self.assertIn(date, answer.text)
+                self.assertNotIn("membership", answer.text)
+
+    def test_a_date_question_about_an_unnamed_branch_asks_which_and_lists_only_those_closing(self):
+        answer = self.system.answer("When will the branch close?").text
+        self.assertIn("which branch", answer)
+        self.assertIn("Hy-Vee", answer)
+        self.assertIn("Asbury", answer)
+        self.assertNotIn("Visa", answer)
+
+    def test_when_a_branch_opens_is_answered_with_hours(self):
+        self.assertTrue(self.system.answer("When does the branch open?").text.startswith("Hours vary by branch"))
+
+    def test_the_two_years_the_site_gives_for_the_foundation_are_noted(self):
+        self.assertIn("2011, 2012", self.system.answer("When was the Dupaco Foundation established?").conflict_note)
 
     def test_a_product_or_fact_the_site_does_not_list_is_refused(self):
         for question in UNLISTED_PRODUCTS + PRODUCTS_FROM_ELSEWHERE_NAMED_AFTER_THE_NOUN + NOTHING_ON_THE_SITE_ANSWERS_THESE:
