@@ -78,6 +78,7 @@ HOW_TO_REACH_ASKED = re.compile(
 )
 
 DATE_OR_YEAR = re.compile(PUBLISHED.pattern + r"|\b(?:19|20)\d\d\b")
+FULL_DATE = re.compile(r"\b[A-Z][a-z]{2,8}\.? \d{1,2}, 20\d\d\b")
 TIME_OF_DAY = re.compile(r"\d(?::\d\d)?\s*[ap]\.?m\b", re.I)
 HOURS_BLOCK = re.compile(r"\b(?:lobby|drive-up)\b.*" + TIME_OF_DAY.pattern, re.I | re.S)
 SCHEDULE_START = re.compile(r"\b(?:lobby|drive-up)\b", re.I)
@@ -295,6 +296,9 @@ class PassageIndex:
                 return None
             if not names and A_BRANCH_ASKED_ABOUT.search(question):
                 return self._date_of_an_unnamed_branch(question, terms, ranked)
+            ranked = [scored for scored in ranked if names <= scored[1].words]
+            if not ranked:
+                return None
         best = _newest_among_the_tied(ranked)
         if shape in (ADDRESS, ROUTING_NUMBER):
             value = shape.search(best.text).group(0)
@@ -456,6 +460,16 @@ def _belongs_beside_the_best_passage(sentence: str, names: set[str], shape: Opti
     return shape is None
 
 
+def _sentence_stating_the_date(question: str, sentences: list[str], names: set[str]) -> str:
+    terms = _search_terms(question)
+
+    def strength(sentence: str) -> tuple[int, int, bool]:
+        words = set(words_in(sentence))
+        return len((terms - names) & words), len(terms & words), bool(FULL_DATE.search(sentence))
+
+    return max(sentences, key=strength)
+
+
 def _answer_from_page(
     question: str, best: Passage, page: list[Passage], names: set[str], shape: Optional[re.Pattern]
 ) -> Optional[Found]:
@@ -471,8 +485,11 @@ def _answer_from_page(
     best_overlap = max(overlap.values(), default=0)
     if best_overlap == 0:
         return None
-    worth_keeping = [s for s in passage_of if overlap[s] >= best_overlap * LOWEST_SHARE_OF_BEST_SENTENCE_KEPT]
-    kept = set(sorted(worth_keeping, key=lambda s: overlap[s], reverse=True)[:SENTENCES_IN_AN_ANSWER])
-    answer = [s for s in passage_of if s in kept]
+    if shape is DATE_OR_YEAR:
+        answer = [_sentence_stating_the_date(question, list(passage_of), names)]
+    else:
+        worth_keeping = [s for s in passage_of if overlap[s] >= best_overlap * LOWEST_SHARE_OF_BEST_SENTENCE_KEPT]
+        kept = set(sorted(worth_keeping, key=lambda s: overlap[s], reverse=True)[:SENTENCES_IN_AN_ANSWER])
+        answer = [s for s in passage_of if s in kept]
     quoted = dict.fromkeys(passage_of[s].text for s in answer)
     return Found(" ".join(answer), (best.url,), " ".join(quoted))

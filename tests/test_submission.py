@@ -221,6 +221,27 @@ class AnswersFromPageText(unittest.TestCase):
         answer = system_with_pages((NEWS_URL + "old", old), (NEWS_URL + "new", new)).answer("When was Dupaco founded?")
         self.assertIn("179,000", answer.text)
 
+    def test_a_date_question_answers_with_one_sentence_preferring_a_full_date_over_a_year(self):
+        page = article(
+            "June 1, 2024",
+            "Dupaco opened the Asbury branch in 2003.\n\n# Closing\n\nThe Asbury branch last day of service is Oct. 1, 2024.",
+        )
+        answer = system_with_pages((NEWS_URL + "a", page)).answer("When did the Asbury branch close?").text
+        self.assertIn("Oct. 1, 2024", answer)
+        self.assertNotIn("2003", answer)
+
+    def test_a_date_sentence_about_what_was_asked_beats_one_that_only_shares_the_name(self):
+        page = article("June 1, 2026", "Hoefer Foundation awards announced April 2026. Established in 2011 to honor Robert.")
+        answer = system_with_pages((NEWS_URL + "a", page)).answer("When was the Hoefer Foundation established?").text
+        self.assertIn("2011", answer)
+        self.assertNotIn("April 2026", answer)
+
+    def test_a_date_question_refuses_when_the_name_is_only_in_the_page_title(self):
+        page = article("June 1, 2026", "The credit union was founded in 1948.")
+        system = KnowledgeSystem()
+        system.ingest(Snapshot("s", "2026-09-28", [Page(NEWS_URL + "a", "Hoefer Foundation awards", page, "2026-09-28")]))
+        self.assertFalse(system.answer("When was the Hoefer Foundation founded?").confident)
+
     def test_a_byline_date_is_not_the_answer_to_a_date_question(self):
         page = "New branch office to open in Coralville\n\nWritten by [Emily](https://www.dupaco.com/a) | Oct 8, 2021 12:57:34 PM"
         answer = system_with_pages((NEWS_URL + "a", page)).answer("When will the new branch office in Coralville open?")
