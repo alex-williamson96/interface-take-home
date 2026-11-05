@@ -84,7 +84,8 @@ FOUNDING_YEAR = re.compile(r"\b(?:founded|founding|established)\b\D{0,10}((?:19|
 CLAUSE_BREAK = re.compile(r",\s+(?!\d)")
 FULL_DATE = re.compile(rf"\b({'|'.join(MONTH_NUMBERS)})[a-z]*\.? (\d{{1,2}}), (20\d\d)\b")
 BARE_YEAR = re.compile(r"\b(?:19|20)\d\d\b")
-FUTURE_ASKED = re.compile(r"\bwill\b|\bgoing to\b", re.I)
+STILL_AHEAD_ASKED = re.compile(r"\bwill\b|\bgoing to\b|\b(?:does|do|is|are)\b", re.I)
+WRITTEN_AS_STILL_AHEAD = re.compile(r"\b(?:will|plans?|planned|expected|scheduled)\b", re.I)
 TIME_OF_DAY = re.compile(r"\d(?::\d\d)?\s*[ap]\.?m\b", re.I)
 HOURS_BLOCK = re.compile(r"\b(?:lobby|drive-up)\b.*" + TIME_OF_DAY.pattern, re.I | re.S)
 SCHEDULE_START = re.compile(r"\b(?:lobby|drive-up)\b", re.I)
@@ -336,7 +337,7 @@ class PassageIndex:
             value = shape.search(best.text).group(0)
             return Found(value + ".", self._pages_stating(value, best), best.text)
         found = _answer_from_page(question, best, self._passages_of[best.url], names, shape)
-        if found and shape is DATE_OR_YEAR and FUTURE_ASKED.search(question) and self._has_passed(found.text):
+        if found and shape is DATE_OR_YEAR and STILL_AHEAD_ASKED.search(question) and self._reads_ahead_but_passed(found.text):
             return replace(found, text=f"That date has passed: {found.text}")
         return found
 
@@ -353,7 +354,7 @@ class PassageIndex:
         if not by_page:
             return None
         pages = list(by_page.values())[:SCHEDULES_IN_AN_ANSWER]
-        if FUTURE_ASKED.search(question):
+        if STILL_AHEAD_ASKED.search(question):
             upcoming = [page for page in pages if not self._has_passed(self._date_on_page(question, page).text)]
             if not upcoming:
                 earlier = " | ".join(f"{_title_of(page)}: {self._date_on_page(question, page).text}" for page in pages)
@@ -367,6 +368,9 @@ class PassageIndex:
 
     def _date_on_page(self, question: str, passage: Passage) -> Found:
         return _answer_from_page(question, passage, self._passages_of[passage.url], set(), DATE_OR_YEAR)
+
+    def _reads_ahead_but_passed(self, sentence: str) -> bool:
+        return bool(WRITTEN_AS_STILL_AHEAD.search(sentence)) and self._has_passed(sentence)
 
     def _has_passed(self, sentence: str) -> bool:
         return _latest_date_in(sentence) < self._taken_on

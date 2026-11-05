@@ -195,7 +195,14 @@ class AnswersFromPageText(unittest.TestCase):
         page = article("June 1, 2025", "The Galena branch will close March 31, 2026.")
         system = system_with_pages((NEWS_URL + "a", page))
         self.assertEqual(system.answer("When will the Galena branch close?").text[:22], "That date has passed: ")
+        self.assertEqual(system.answer("When does the Galena branch close?").text[:22], "That date has passed: ")
         self.assertNotIn("passed", system.answer("When did the Galena branch close?").text)
+
+    def test_a_sentence_already_in_the_past_tense_is_not_told_its_date_has_passed(self):
+        page = article("June 1, 2021", "The Galena branch ribbon cutting was held June 1, 2021.")
+        answer = system_with_pages((NEWS_URL + "a", page)).answer("When is the Galena branch ribbon cutting?").text
+        self.assertNotIn("passed", answer)
+        self.assertIn("June 1, 2021", answer)
 
     def test_a_will_question_about_an_unnamed_branch_lists_only_upcoming_dates(self):
         closing = article("June 1, 2026", "This branch will close on {}.")

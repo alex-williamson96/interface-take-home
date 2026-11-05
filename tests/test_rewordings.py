@@ -118,6 +118,14 @@ class RewordingsAgainstRealSnapshots(unittest.TestCase):
         self.assertIn("Asbury", answer)
         self.assertNotIn("Visa", answer)
 
+    def test_a_closed_branch_is_described_as_closed_however_the_question_is_worded(self):
+        for question, opening in (
+            ("When does the Hy-Vee branch close?", "That date has passed: "),
+            ("When will the Hy-Vee branch close?", "That date has passed: "),
+        ):
+            with self.subTest(question):
+                self.assertTrue(self.system.answer(question).text.startswith(opening))
+
     def test_when_a_branch_opens_is_answered_with_hours(self):
         self.assertTrue(self.system.answer("When does the branch open?").text.startswith("Hours vary by branch"))
 
