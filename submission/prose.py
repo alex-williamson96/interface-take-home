@@ -119,6 +119,9 @@ def words_in(text: str) -> list[str]:
 WORDS_THAT_DO_NOT_SEARCH = frozenset(words_in(WORDS_THAT_DO_NOT_SEARCH_TEXT))
 WORDS_A_SHAPE_ALREADY_SATISFIES = frozenset(words_in("address phone number"))
 WORDS_NAMING_A_KIND_OF_HOURS = frozenset(words_in("lobby drive"))
+WORDS_ABOUT_REACHING_DUPACO = frozenset(
+    words_in("call contact information update change customer member service support main general credit union talk speak reach someone")
+)
 
 
 def trust_of(path: str) -> float:
@@ -273,7 +276,7 @@ class PassageIndex:
         names = _names_in(question)
         ranked = self._ranked(terms, names, shape, fewest_body_matches)
         if shape is PHONE:
-            return self._phone_answer(ranked, names)
+            return self._phone_answer(ranked, terms)
         if not ranked:
             return None
         if COUNTED_THING.search(question):
@@ -306,9 +309,9 @@ class PassageIndex:
         sentence, _, passage = max(statements, key=strength)
         return Found(sentence, (passage.url,), passage.text)
 
-    def _phone_answer(self, ranked: list[tuple[float, Passage]], names: set[str]) -> Optional[Found]:
+    def _phone_answer(self, ranked: list[tuple[float, Passage]], terms: set[str]) -> Optional[Found]:
         stating = [passage for _, passage in ranked if passage.trust == TRUST_OF_SITE_PAGE]
-        if not names:
+        if terms <= WORDS_ABOUT_REACHING_DUPACO:
             stating += [p for p in self._passages if page_path(p.url) == LOCATOR_PATH and PHONE.search(p.text)]
         best = next(iter(stating), None)
         return Found(f"Call {PHONE.search(best.text).group(0)}.", (best.url,), best.text) if best else None

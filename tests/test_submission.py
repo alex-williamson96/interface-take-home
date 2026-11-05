@@ -192,13 +192,18 @@ class AnswersFromPageText(unittest.TestCase):
         system = system_with_pages((CONTACT_URL, CONTACT_PAGE))
         self.assertFalse(system.answer("What is Chase's phone number?").confident)
 
+    def test_a_phone_number_for_another_company_refuses_even_in_lowercase(self):
+        system = system_with_pages((CONTACT_URL, CONTACT_PAGE))
+        self.assertFalse(system.answer("what is the phone number for chase?").confident)
+
     def test_a_question_mentioning_a_phone_is_not_asking_for_a_number(self):
         system = system_with_pages((CONTACT_URL, CONTACT_PAGE))
         self.assertFalse(system.answer("Can I deposit a check with my phone?").confident)
 
     def test_a_phone_question_naming_no_one_gets_the_locator_number(self):
-        answer = system_with_pages((CONTACT_URL, CONTACT_PAGE)).answer("What is your phone number?")
-        self.assertEqual(answer.text, "Call 800-373-7600.")
+        system = system_with_pages((CONTACT_URL, CONTACT_PAGE))
+        for question in ("What is your phone number?", "What is the customer service phone number?"):
+            self.assertEqual(system.answer(question).text, "Call 800-373-7600.", question)
 
     def test_a_link_to_business_rates_is_the_business_product_page(self):
         business_url = "https://www.dupaco.com/business/savings/certificates"
