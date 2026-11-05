@@ -3,7 +3,7 @@ from __future__ import annotations
 import math
 import re
 from collections import Counter, defaultdict
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Optional
 
 from rate_facts import page_path, stem
@@ -79,6 +79,8 @@ HOW_TO_REACH_ASKED = re.compile(
 )
 
 DATE_OR_YEAR = re.compile(PUBLISHED.pattern + r"|\b(?:19|20)\d\d\b")
+FOUNDING_ASKED = re.compile(r"\b(?:founded|established)\b", re.I)
+FOUNDING_YEAR = re.compile(r"\b(?:founded|founding|established)\b\D{0,10}((?:19|20)\d\d)\b", re.I)
 CLAUSE_BREAK = re.compile(r",\s+(?!\d)")
 FULL_DATE = re.compile(r"\b[A-Z][a-z]{2,8}\.? \d{1,2}, 20\d\d\b")
 TIME_OF_DAY = re.compile(r"\d(?::\d\d)?\s*[ap]\.?m\b", re.I)
@@ -114,6 +116,7 @@ class Found:
     text: str
     urls: tuple[str, ...]
     quote: str
+    conflict_note: Optional[str] = None
 
 
 def _without_ending(word: str) -> str:
@@ -281,6 +284,28 @@ class PassageIndex:
         return ranked
 
     def search(self, question: str) -> Optional[Found]:
+        if not (DATE_ASKED.search(question) and FOUNDING_ASKED.search(question)):
+            return self._search_as_worded(question)
+        names = _names_in(question)
+        if not names:
+            return self._search_as_worded(FOUNDING_ASKED.sub("founded", question))
+        found = self._search_as_worded(question) or self._search_as_worded(FOUNDING_ASKED.sub("established", question))
+        return found and replace(found, conflict_note=self._disagreement_about_founding(names))
+
+    def _disagreement_about_founding(self, names: set[str]) -> Optional[str]:
+        years = {
+            year
+            for passage in self._passages
+            if names <= passage.words
+            for sentence in SENTENCE_END.split(passage.text)
+            if names <= set(words_in(sentence))
+            for year in FOUNDING_YEAR.findall(sentence)
+        }
+        if len(years) < 2:
+            return None
+        return f"The site gives more than one year for this: {', '.join(sorted(years))}. This answer uses the best matching page."
+
+    def _search_as_worded(self, question: str) -> Optional[Found]:
         names = _names_in(question)
         if _asks_when_a_branch_is_open(question, names):
             return self._hours(question)

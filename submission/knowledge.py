@@ -78,7 +78,7 @@ def _answer_from_search(question: str, snapshot: IndexedSnapshot) -> Answer:
     if found is None:
         return refusal()
     sources = [Source(url=url, snapshot_id=snapshot.snapshot_id, quote=found.quote) for url in found.urls]
-    return Answer(text=found.text, sources=sources)
+    return Answer(text=found.text, sources=sources, conflict_note=found.conflict_note)
 
 
 def _link_answer(question: str, snapshot: IndexedSnapshot) -> Optional[Found]:

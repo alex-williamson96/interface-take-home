@@ -242,6 +242,22 @@ class AnswersFromPageText(unittest.TestCase):
         system.ingest(Snapshot("s", "2026-09-28", [Page(NEWS_URL + "a", "Hoefer Foundation awards", page, "2026-09-28")]))
         self.assertFalse(system.answer("When was the Hoefer Foundation founded?").confident)
 
+    def test_a_named_thing_founded_is_answered_by_established_but_dupaco_itself_stays_founded(self):
+        system = system_with_pages(
+            (NEWS_URL + "a", article("June 1, 2026", "The Hoefer Foundation was established in 2011.")),
+            (NEWS_URL + "b", article("May 1, 2026", "Dupaco was founded in 1948.")),
+        )
+        self.assertIn("2011", system.answer("When was the Hoefer Foundation founded?").text)
+        self.assertIn("1948", system.answer("When was Dupaco established?").text)
+
+    def test_years_that_disagree_about_a_founding_are_noted_and_agreement_is_not(self):
+        established = article("June 1, 2026", "The Hoefer Foundation was established in 2011.")
+        founding = article("June 2, 2026", "Since its founding in 2012, the Hoefer Foundation has given grants.")
+        question = "When was the Hoefer Foundation established?"
+        self.assertIsNone(system_with_pages((NEWS_URL + "a", established)).answer(question).conflict_note)
+        note = system_with_pages((NEWS_URL + "a", established), (NEWS_URL + "b", founding)).answer(question).conflict_note
+        self.assertIn("2011, 2012", note)
+
     def test_a_date_answer_stops_at_the_clause_holding_the_date(self):
         page = article("June 1, 2026", "Founded in 1948 by ten employees, membership has grown to more than 179,000.")
         answer = system_with_pages((NEWS_URL + "a", page)).answer("When was Dupaco founded?").text
