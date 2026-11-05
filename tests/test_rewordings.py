@@ -41,6 +41,14 @@ PRODUCTS_FROM_ELSEWHERE_NAMED_AFTER_THE_NOUN = (
     "What rate does Wells Fargo charge on a mortgage?",
 )
 
+NOTHING_ON_THE_SITE_ANSWERS_THESE = (
+    "Can you give me the lobby hours for the Mullan Avenue branch?",
+    "What is the address of the Chicago branch?",
+    "What's the routing number for Chase?",
+    "Who won the Super Bowl?",
+    "Tell me a joke",
+)
+
 UNLISTED_PRODUCTS = (
     "What is the rate on a 5/1 ARM?",
     "What is the 7/1 ARM rate?",
@@ -75,8 +83,8 @@ class RewordingsAgainstRealSnapshots(unittest.TestCase):
                 self.assertTrue(plain_answer.confident, plain)
                 self.assertEqual(self.system.answer(reworded).text, plain_answer.text)
 
-    def test_a_product_the_site_does_not_list_is_refused(self):
-        for question in UNLISTED_PRODUCTS + PRODUCTS_FROM_ELSEWHERE_NAMED_AFTER_THE_NOUN:
+    def test_a_product_or_fact_the_site_does_not_list_is_refused(self):
+        for question in UNLISTED_PRODUCTS + PRODUCTS_FROM_ELSEWHERE_NAMED_AFTER_THE_NOUN + NOTHING_ON_THE_SITE_ANSWERS_THESE:
             with self.subTest(question):
                 self.assertFalse(self.system.answer(question).confident)
 
