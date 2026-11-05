@@ -14,6 +14,7 @@ MARKUP = re.compile(r"\\?\*+|\\|^#+\s*|^>\s*|^[-•]\s+", re.M)
 QUESTION_WORD = re.compile(r"[a-z0-9$]+(?:'[a-z]+)?")
 WORD_ENDING = re.compile(r"(?:ibility|ible|ation|ition|tion|ized|izes|ize|ing|ed|es|e)$")
 SHORTEST_WORD_WITH_ITS_ENDING_REMOVED = 5
+WORDS_THAT_MEAN_SOMETHING_ELSE_WITHOUT_THEIR_ENDING = frozenset({"foundation", "founded"})
 SENTENCE_END = re.compile(r"(?<=[.!?])\s+(?=[A-Z\"“])")
 PUBLISHED = re.compile(
     r"\b(January|February|March|April|May|June|July|August|September|October|November|December) (\d{1,2}), (20\d\d)\b"
@@ -66,7 +67,7 @@ CLOSING_TIME_ASKED = re.compile(r"\bwhen (?:does|do|is)\b.*\b(?:branch(?:es)?|lo
 A_BRANCH_ASKED_ABOUT = re.compile(r"\b(?:branch(?:es)?|locations?)\b", re.I)
 FIRST_OR_LAST_OF_A_KIND = re.compile(r"\b(?:first|last|oldest|newest|original)\s+[a-z]+", re.I)
 BYLINE = re.compile(r"Written by .*?\|\s*[A-Z][a-z]{2} \d{1,2}, \d{4} [\d:]+ [AP]M")
-DATE_ASKED = re.compile(r"\bwhen\b|\bwhat date\b|\bstill open\b", re.I)
+DATE_ASKED = re.compile(r"\bwhen\b|\b(?:what|which) (?:date|year)\b|\bstill open\b", re.I)
 ADDRESS_ASKED = re.compile(r"\baddress\b", re.I)
 ROUTING_ASKED = re.compile(r"\brouting\b", re.I)
 HOW_TO_REACH_ASKED = re.compile(
@@ -112,7 +113,7 @@ class Found:
 
 
 def _without_ending(word: str) -> str:
-    if len(word) < SHORTEST_WORD_WITH_ITS_ENDING_REMOVED:
+    if len(word) < SHORTEST_WORD_WITH_ITS_ENDING_REMOVED or word in WORDS_THAT_MEAN_SOMETHING_ELSE_WITHOUT_THEIR_ENDING:
         return word
     return WORD_ENDING.sub("", word)
 
@@ -122,7 +123,7 @@ def words_in(text: str) -> list[str]:
 
 
 WORDS_THAT_DO_NOT_SEARCH = frozenset(words_in(WORDS_THAT_DO_NOT_SEARCH_TEXT))
-WORDS_A_SHAPE_ALREADY_SATISFIES = frozenset(words_in("address phone number"))
+WORDS_A_SHAPE_ALREADY_SATISFIES = frozenset(words_in("address phone number year date"))
 WORDS_NAMING_A_KIND_OF_HOURS = frozenset(words_in("lobby drive"))
 WORDS_ABOUT_REACHING_DUPACO = frozenset(
     words_in("call contact information update change customer member service support main general credit union talk speak reach someone")

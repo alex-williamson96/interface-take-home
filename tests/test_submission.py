@@ -207,6 +207,14 @@ class AnswersFromPageText(unittest.TestCase):
         page = article("June 1, 2026", "Dupaco will open the first floor of its new branch in 2022.")
         self.assertFalse(system_with_pages((NEWS_URL + "a", page)).answer("When did Dupaco open its first branch?").confident)
 
+    def test_founded_is_not_read_as_foundation_or_as_the_past_of_find(self):
+        founded = article("June 1, 2026", "Dupaco was founded in 1948 by ten employees.")
+        foundation = article("June 1, 2026", "The Dupaco Foundation started in 2011.")
+        found = article("June 1, 2026", "In 2020 we found Dupaco to be the best.")
+        system = system_with_pages((NEWS_URL + "a", foundation), (NEWS_URL + "b", found), (NEWS_URL + "c", founded))
+        for question in ("When was Dupaco founded?", "What year was Dupaco founded?"):
+            self.assertIn("1948", system.answer(question).text, question)
+
     def test_a_byline_date_is_not_the_answer_to_a_date_question(self):
         page = "New branch office to open in Coralville\n\nWritten by [Emily](https://www.dupaco.com/a) | Oct 8, 2021 12:57:34 PM"
         answer = system_with_pages((NEWS_URL + "a", page)).answer("When will the new branch office in Coralville open?")
