@@ -33,6 +33,12 @@ BEST_ASKED = re.compile(r"\bbest\b", re.I)
 HIGHEST_ASKED = re.compile(r"\b(highest|top|(?:pays?|earns?) the most)\b", re.I)
 LOWEST_ASKED = re.compile(r"\b(lowest|cheapest)\b|(?<!\bat )\bleast\b", re.I)
 YES_OR_NO_ABOUT_A_PERCENT = re.compile(r"^\s*(?:do|does|is|are)\b.*?(\d+(?:\.\d+)?)\s*%", re.I)
+COMPARED_TO_A_PERCENT = re.compile(
+    r"\b(?:over|above|under|below|exceed\w*|beat\w*|(?:more|less|greater|higher|lower|better) than|at (?:least|most)"
+    r"|or (?:more|less|higher|lower|better))\b",
+    re.I,
+)
+PRICE_ASKED = re.compile(r"\bhow much (?:is|are|would|does|do you)\b|\bcurrent\b", re.I)
 MODEL_YEAR = re.compile(r"\b(20\d\d)\b")
 AMOUNT = re.compile(r"(\$\s*)?\b(\d{1,3}(?:,\d{3})+|\d+)(\.\d+)?\s*(k|thousand|dollars)?\b", re.I)
 SHORTEST_BARE_AMOUNT_DIGITS = 5
@@ -101,6 +107,7 @@ PRODUCT_NOUNS = frozenset(
 MODIFIER_BETWEEN_NAME_AND_NOUN = stem("business")
 CAPITALIZED_AFTER_FIRST_WORD = re.compile(r"(?<=[\s-])[A-Z][A-Za-z']*")
 FAMILIES_WHERE_CAPITALS_ARE_VEHICLE_MAKES = frozenset({"auto", "recreation"})
+TOPICS_OTHER_THAN_A_RATE = (NON_RATE_TOPIC, PAYING_A_BILL, LINK_INTENT, HOW_TO_ASKED)
 
 
 @dataclass(frozen=True)
@@ -121,7 +128,7 @@ class RateQuestion:
 def parse_rate_question(question: str) -> Optional[RateQuestion]:
     if not _asks_for_a_rate(question):
         return None
-    family = next((name for name, pattern in FAMILY_SYNONYMS if pattern.search(question)), None)
+    family = _family_in(question)
     if family is None:
         return None
     undated = CALENDAR_DATE.sub(" ", _with_digit_terms(question))
@@ -131,9 +138,8 @@ def parse_rate_question(question: str) -> Optional[RateQuestion]:
     expanded = _with_phrases_as_one_word(undated)
     words_in_order = [stem(word) for word in WORD.findall(expanded.lower())]
     capitals_name_products = family not in FAMILIES_WHERE_CAPITALS_ARE_VEHICLE_MAKES
-    percent_asked = YES_OR_NO_ABOUT_A_PERCENT.search(question)
     return RateQuestion(
-        percent_asked_about=float(percent_asked.group(1)) if percent_asked else None,
+        percent_asked_about=_percent_asked_about(question),
         family=family,
         words=frozenset(word for word in words_in_order if _can_narrow(word)),
         product_words=_words_before_a_product_noun(words_in_order)
@@ -155,22 +161,36 @@ def asks_for_a_link(question: str) -> bool:
 def family_of_rates_asked_about(question: str) -> Optional[str]:
     if not RATE_INTENT.search(question):
         return None
-    return next((name for name, pattern in FAMILY_SYNONYMS if pattern.search(question)), None)
+    return _family_in(question)
 
 
 def search_may_answer(question: str) -> bool:
     if FEE_ASKED.search(question) or ASKS_HOW_RATES_WORK.search(question) and RATE_INTENT.search(question):
         return False
-    if not RATE_INTENT.search(question):
+    if not RATE_INTENT.search(question) and not _asks_for_a_rate_without_saying_so(question):
         return True
-    return any(topic.search(question) for topic in (NON_RATE_TOPIC, PAYING_A_BILL, LINK_INTENT, HOW_TO_ASKED))
+    return any(topic.search(question) for topic in TOPICS_OTHER_THAN_A_RATE)
+
+
+def _asks_for_a_rate_without_saying_so(question: str) -> bool:
+    return _family_in(question) is not None and bool(TERM.search(question) or PRICE_ASKED.search(question))
 
 
 def _asks_for_a_rate(question: str) -> bool:
     if not RATE_INTENT.search(question):
         return False
-    other_topics = (NON_RATE_TOPIC, PAYING_A_BILL, LINK_INTENT, HOW_TO_ASKED, ASKS_HOW_RATES_WORK)
-    return not any(topic.search(question) for topic in other_topics)
+    return not any(topic.search(question) for topic in (*TOPICS_OTHER_THAN_A_RATE, ASKS_HOW_RATES_WORK))
+
+
+def _family_in(question: str) -> Optional[str]:
+    return next((name for name, pattern in FAMILY_SYNONYMS if pattern.search(question)), None)
+
+
+def _percent_asked_about(question: str) -> Optional[float]:
+    if COMPARED_TO_A_PERCENT.search(question):
+        return None
+    asked = YES_OR_NO_ABOUT_A_PERCENT.search(question)
+    return float(asked.group(1)) if asked else None
 
 
 def _with_digit_terms(question: str) -> str:

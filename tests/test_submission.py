@@ -158,6 +158,12 @@ class AnswersFromPageText(unittest.TestCase):
         answer = system_with_pages((RATES_URL, sheet), (PRODUCT_URL, sheet)).answer("What link shows your CD rates?")
         self.assertEqual(answer.text, PRODUCT_URL)
 
+    def test_a_rate_question_without_a_rate_word_never_falls_back_to_page_text(self):
+        page = article("June 1, 2026", "The current 30-year fixed averaged 6.04%. The 17-month certificate special is 4.10%.")
+        system = system_with_pages((NEWS_URL + "a", page))
+        for question in ("What's the current 30-year fixed?", "How much is the 17-month certificate special?"):
+            self.assertFalse(system.answer(question).confident, question)
+
 
 class AnswerBehaviour(unittest.TestCase):
     def test_as_of_answers_from_the_newest_snapshot_on_or_before_that_date(self):
@@ -435,6 +441,10 @@ class QuestionWording(unittest.TestCase):
         self.assertTrue(yes.startswith("Yes: Share Savings $25,000+: 0.20% APY."), yes)
         no = system.answer("Do any savings tiers pay 0.35% APY?").text
         self.assertTrue(no.startswith("No. "), no)
+
+    def test_a_percent_compared_against_gets_the_list_without_a_yes_or_no(self):
+        answer = system_with_two_dates().answer("Do any savings tiers pay more than 0.10% APY?").text
+        self.assertTrue(answer.startswith("Share Savings"), answer)
 
     def test_a_product_page_dated_after_the_rate_sheet_wins_when_they_disagree(self):
         answer = system_with_sheet_and_product_page("4/2/2026", "4/6/2026").answer("What is the 10 month CD APY?")
