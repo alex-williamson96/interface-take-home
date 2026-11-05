@@ -238,6 +238,14 @@ class AnswersFromPageText(unittest.TestCase):
         self.assertTrue(asked_with("March 31, 2026").startswith("No. "))
         self.assertTrue(asked_with("March 31, 2027").startswith("Yes, for now. "))
 
+    def test_still_open_refuses_when_only_a_schedule_says_closed(self):
+        page = article("June 1, 2026", "Galena branch hours are:\n\n**Lobby**\n\nMonday-Friday: 8:30 a.m.-5 p.m.\n\nSunday: Closed")
+        self.assertFalse(system_with_pages((NEWS_URL + "a", page)).answer("Are the Galena branch hours still open?").confident)
+
+    def test_a_count_another_organization_states_about_itself_is_not_dupacos(self):
+        page = article("June 1, 2026", "We work together with over 1,200 member institutions.")
+        self.assertFalse(system_with_pages((NEWS_URL + "a", page)).answer("How many members does Dupaco have?").confident)
+
     def test_still_open_refuses_when_the_site_states_no_closing(self):
         page = article("June 1, 2025", "Dupaco opened the Galena branch in 2003.")
         self.assertFalse(system_with_pages((NEWS_URL + "a", page)).answer("Is the Galena branch still open?").confident)

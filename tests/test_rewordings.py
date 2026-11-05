@@ -69,6 +69,15 @@ DATES_THE_SITE_STATES = (
     ("When was Dupaco Credit Union established?", "1948"),
 )
 
+COUNTS_THE_SITE_STATES = (
+    ("How many locations does Dupaco have?", "22"),
+    ("How many Dupaco locations are there?", "22"),
+    ("How many offices does Dupaco have?", "22"),
+    ("How many branches are there in total?", "22"),
+    ("How many full-service branches does Dupaco have?", "22"),
+    ("How many members does Dupaco have?", "179,000"),
+)
+
 DATE_SENTENCES_SHARING_ONLY_A_NAME = (
     "When did the Key West branch open?",
     "When was the Key West branch built?",
@@ -154,6 +163,11 @@ class RewordingsAgainstRealSnapshots(unittest.TestCase):
         for question in QUESTIONS_NAMING_NO_BRANCH_THAT_MUST_NOT_BE_TOLD_ONE_CLOSED:
             with self.subTest(question):
                 self.assertNotIn("March 31, 2026", self.system.answer(question).text)
+
+    def test_a_count_is_the_newest_dupaco_states_about_itself(self):
+        for question, count in COUNTS_THE_SITE_STATES:
+            with self.subTest(question):
+                self.assertIn(count, self.system.answer(question).text)
 
     def test_a_date_sentence_sharing_only_a_name_is_refused(self):
         for question in DATE_SENTENCES_SHARING_ONLY_A_NAME:

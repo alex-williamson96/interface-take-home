@@ -59,7 +59,7 @@ TRUST_OF_SITE_PAGE = 1.0
 WORDS_THAT_DO_NOT_SEARCH_TEXT = """
     a about all also am an and any are as at be been can could did do does dupaco dupaco's for from get give go going
     had has have how i i'd i'm if in is it its just know like many may me much my need of on or our please provide
-    repeat should so some still tell that the their them there these they this to today us was we were what what's
+    repeat should so some still tell that the their them there these they this to today total us was we were what what's
     when where which who why will with would you your link url website webpage page use see
 """
 
@@ -111,7 +111,10 @@ TITLE_SITE_SUFFIX = re.compile(r"\s*\|.*$")
 BECOMING_A_MEMBER = re.compile(r"\bbecome a(?: dupaco)? member\b|\bmembership\b", re.I)
 END_OF_ARTICLE = re.compile(r"^#+\s*Handpicked for You.*", re.M | re.S)
 TEASER = re.compile(r"\b(?:min read|keep reading|read more)\b", re.I)
-COUNTED_THING = re.compile(r"\bhow many\s+(?:dupaco\s+)?([a-z]+)", re.I)
+COUNTED_THING = re.compile(r"\b[Hh]ow many\s+(?:[A-Z][a-z]+\s+)*([A-Za-z]+)")
+FULL_SERVICE = re.compile(r"\bfull[- ]service\b", re.I)
+STATED_ABOUT_DUPACO = re.compile(r"\bdupaco\b|\bit has\b|\bour\b|\bfounded in 1948\b", re.I)
+MEMBERSHIP_TOTAL = r"membership (?:totals|has grown to) (?:more than )?\d+(?:,\d{3})*"
 ADDRESS = re.compile(r"\d+ [^,\n]+, [A-Z][A-Za-z ]+, [A-Z]{2},? \d{5}")
 ROUTING_NUMBER = re.compile(r"\b\d{9}\b")
 PHONE = re.compile(r"\b\d{3}-\d{3}-\d{4}\b")
@@ -154,6 +157,8 @@ def words_in(text: str) -> list[str]:
 WORDS_THAT_DO_NOT_SEARCH = frozenset(words_in(WORDS_THAT_DO_NOT_SEARCH_TEXT))
 WORDS_A_SHAPE_ALREADY_SATISFIES = frozenset(words_in("address phone number year date"))
 WORDS_ANY_BRANCH_SHARES = frozenset(words_in("branch location"))
+MEMBER = stem("member")
+COUNTED_AS_BRANCHES = frozenset(stem(word) for word in ("location", "office"))
 WORDS_IN_DUPACOS_OWN_NAME = frozenset(words_in("community credit union"))
 WORDS_THAT_NAME_NOTHING_ALONE = WORDS_ANY_BRANCH_SHARES | WORDS_IN_DUPACOS_OWN_NAME
 CLOSE = _without_ending(stem("close"))
@@ -311,6 +316,8 @@ class PassageIndex:
     def search(self, question: str) -> Optional[Found]:
         if DUPACO_ORIGIN_ASKED.search(question):
             return self._search_as_worded(WHEN_DUPACO_WAS_FOUNDED)
+        if COUNTED_THING.search(question):
+            question = FULL_SERVICE.sub(" ", question)
         still_open = STILL_OPEN_ASKED.search(question)
         if still_open:
             place = still_open.group(1)
@@ -332,7 +339,7 @@ class PassageIndex:
 
     def _is_it_still_open(self, place: str) -> Optional[Found]:
         found = self._search_as_worded(_when_will_it_close(place))
-        if not found or not CLOSING_STATED.search(found.text):
+        if not found or not CLOSING_STATED.search(found.text) or not DATE_OR_YEAR.search(found.text):
             return None
         lead = "No." if self._has_passed(found.text) else "Yes, for now."
         return replace(found, text=f"{lead} {found.text}")
@@ -446,14 +453,17 @@ class PassageIndex:
 
     def _most_stated_count(
         self, question: str, ranked: list[tuple[float, Passage]], shape: re.Pattern
-    ) -> Found:
-        terms = _search_terms(question)
+    ) -> Optional[Found]:
+        terms = _search_terms(question) - set(words_in(COUNTED_THING.search(question).group(1)))
+        names = _names_in(question)
         statements = [
             (sentence, shape.search(sentence).group(0).lower(), passage)
             for _, passage in ranked
             for sentence in SENTENCE_END.split(passage.text)
-            if shape.search(sentence)
+            if shape.search(sentence) and STATED_ABOUT_DUPACO.search(sentence) and names <= set(words_in(sentence))
         ]
+        if not statements:
+            return None
         pages_stating: Counter = Counter()
         for _, count, passage in statements:
             pages_stating[count] += self._pages_repeating[passage.text]
@@ -573,8 +583,10 @@ def _shape_asked_for(question: str) -> Optional[re.Pattern]:
         return DATE_OR_YEAR
     counted = COUNTED_THING.search(question)
     if counted:
-        singular = _without_ending(stem(counted.group(1).lower()))
-        return re.compile(rf"\b(?!(?:19|20)\d\d\b)\d+(?:,\d{{3}})*\s+(?:\w+\s+)?{re.escape(singular)}", re.I)
+        counted_word = stem(counted.group(1).lower())
+        singular = "branch" if counted_word in COUNTED_AS_BRANCHES else counted_word.removesuffix("e")
+        stated_count = rf"\b(?!(?:19|20)\d\d\b)\d+(?:,\d{{3}})*\s+(?:\w+\s+)?{re.escape(singular)}"
+        return re.compile(f"{MEMBERSHIP_TOTAL}|{stated_count}" if counted_word == MEMBER else stated_count, re.I)
     return None
 
 
