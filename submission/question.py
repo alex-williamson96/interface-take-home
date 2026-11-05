@@ -17,16 +17,17 @@ NON_RATE_TOPIC = re.compile(
     re.I,
 )
 FEE_ASKED = re.compile(
-    r"\b(fees?|penalt(?:y|ies)|overdr(?:aft|aw\w*)|stop payment|costs?)\b"
-    r"|\bhow much\b.*\b(?:lost|stolen|replac\w*)\b",
+    r"\b(fees?|penalt(?:y|ies)|overdr(?:aft|aw\w*)|stop payment)\b"
+    r"|\bhow much\b.*\b(?:lost|stolen|replac\w*)\b|\bcosts? to replace\b",
     re.I,
 )
 REACHING_SOMEONE = re.compile(
-    r"\bphone\b|\bwho\b.*\b(?:call|talk to|speak)\b|\b(?:call|contact)\b.*\babout\b|\bnumber\b.*\bcall\b",
+    r"\bphone numbers?\b|\bwho\b.*\b(?:call|talk to|speak)\b|\b(?:call|contact)\b.*\babout\b|\bnumber\b.*\bcall\b",
     re.I,
 )
 ASKS_HOW_RATES_WORK = re.compile(r"^\s*(?:why|when|will|how (?:is|are|often|does|do)|(?:does|do) my)\b", re.I)
 PAYING_A_BILL = re.compile(r"\b(?:can|do|should|must|have to)(?: i)? pay\b|\bpay (?:off|my)\b", re.I)
+RATE_NAMED = re.compile(r"\b(?:rates?|aprs?|apys?|interest)\b", re.I)
 CALENDAR_DATE = re.compile(
     r"\b(jan|feb|mar|april|may|jun|jul|aug|sep|sept|oct|nov|dec)[a-z]*\.?\s+(\d{1,2},?\s+)?20\d\d\b"
     r"|\b\d{1,2}/\d{1,2}/20\d\d\b"
@@ -186,7 +187,7 @@ def asks_about_a_fee(question: str) -> bool:
 
 
 def search_may_answer(question: str) -> bool:
-    if PAYING_A_BILL.search(question) and _family_in(question):
+    if PAYING_A_BILL.search(question) and _family_in(question) and not NON_RATE_TOPIC.search(question):
         return False
     if RATE_INTENT.search(question):
         if ASKS_HOW_RATES_WORK.search(question):
@@ -204,7 +205,10 @@ def _asks_for_a_rate_without_saying_so(question: str) -> bool:
 def _asks_for_a_rate(question: str) -> bool:
     if not RATE_INTENT.search(question) and not _asks_the_price_of_a_term(question):
         return False
-    return not any(topic.search(question) for topic in (*TOPICS_OTHER_THAN_A_RATE, ASKS_HOW_RATES_WORK))
+    other_topics = [topic for topic in (*TOPICS_OTHER_THAN_A_RATE, ASKS_HOW_RATES_WORK) if topic is not PAYING_A_BILL]
+    if any(topic.search(question) for topic in other_topics):
+        return False
+    return not PAYING_A_BILL.search(question) or bool(RATE_NAMED.search(question))
 
 
 def _asks_the_price_of_a_term(question: str) -> bool:

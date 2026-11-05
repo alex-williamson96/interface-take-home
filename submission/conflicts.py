@@ -47,17 +47,17 @@ def branch_count_conflict(passages: PassageIndex, snapshot_id: str) -> Optional[
 
 def foundation_founding_conflict(passages: PassageIndex, snapshot_id: str) -> Optional[Conflict]:
     statements = passages.founding_year_statements(FOUNDATION_NAME)
-    pages_stating = Counter(year for year, _ in statements)
-    if len(pages_stating) < 2:
+    statements_per_year = Counter(year for year, _ in statements)
+    if len(statements_per_year) < 2:
         return None
-    most_stated = pages_stating.most_common(1)[0][0]
+    most_stated = statements_per_year.most_common(1)[0][0]
     one_statement_per_year = {year: passage for year, passage in statements}
     return Conflict(
         topic="year the Dupaco Foundation was founded",
-        values=list(pages_stating),
+        values=list(statements_per_year),
         sources=[Source(url=p.url, snapshot_id=snapshot_id, quote=p.text) for p in one_statement_per_year.values()],
         resolution=most_stated,
-        reason=f"{pages_stating[most_stated]} of {len(statements)} statements give {most_stated}.",
+        reason=f"{statements_per_year[most_stated]} of {len(statements)} statements give {most_stated}.",
     )
 
 

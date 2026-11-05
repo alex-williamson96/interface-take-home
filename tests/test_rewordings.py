@@ -71,6 +71,7 @@ DATES_THE_SITE_STATES = (
     ("When was Dupaco Credit Union established?", "1948"),
     ("When was the credit union founded?", "1948"),
     ("When did the Hy-Vee branch shut down?", "March 31, 2026"),
+    ("When did the scholarship deadline pass?", "February 25, 2026"),
     ("When is the next nonprofit grant cycle?", "2027"),
     ("When was the Mineral Point branch ribbon cutting?", "September 29, 2022"),
     ("When did the Sycamore Street branch renovation finish?", "April 6, 2026"),
@@ -107,6 +108,14 @@ ROUTED_TO_THE_RIGHT_ANSWER = (
     ("Who do I call about a charge on my credit card?", "800-373-7600"),
     ("What phone number do I call about my Visa charge?", "800-373-7600"),
     ("Who should I talk to about mortgage rates?", "800-373-7600"),
+    ("What is the auto loan rate if I apply by phone?", "5.39%"),
+    ("What is the savings rate if I open by phone?", "0.20%"),
+    ("What APR do I pay on a 60-month auto loan?", "5.39%"),
+    ("What rate do I pay on an auto loan?", "5.39%"),
+    ("Can I pay with Apple Pay using my Dupaco credit card?", "Apple Pay"),
+    ("How much does it cost to join Dupaco?", "$25"),
+    ("HOW MANY BRANCHES DO YOU HAVE?", "22"),
+    ("is the hy-vee branch still open", "March 31, 2026"),
 )
 
 FEES_AND_LIMITS_THE_SITE_DOES_NOT_STATE = (
@@ -116,6 +125,7 @@ FEES_AND_LIMITS_THE_SITE_DOES_NOT_STATE = (
     "What is the minimum to open a 12-month certificate?",
     "How do I pay my car loan?",
     "How can I pay my car loan?",
+    "How many members voted in the board election?",
     "How do I dispute a charge?",
     "How do I find the rates page?",
     "When will Dupaco close?",
@@ -252,6 +262,9 @@ class RewordingsAgainstRealSnapshots(unittest.TestCase):
 
     def test_a_what_time_question_about_a_branch_without_hours_is_refused(self):
         self.assertFalse(self.system.answer("What time does the Key West branch close?").confident)
+
+    def test_a_past_tense_question_is_not_answered_with_a_date_still_ahead(self):
+        self.assertNotIn("2027", self.system.answer("When were the Foundation grants awarded?").text)
 
     def test_a_count_is_the_newest_dupaco_states_about_itself(self):
         for question, count in COUNTS_THE_SITE_STATES:

@@ -75,7 +75,6 @@ LOCATOR_PATH = "/contact"
 FEE_SCHEDULE_PATH_PART = "fee-schedule"
 FEE_AMOUNT = re.compile(r"\$\d|\d%|\bfree\b", re.I)
 FOOTNOTE_AFTER_THE_AMOUNT = re.compile(r"\s+\*.*$")
-BUSINESS_ROW = re.compile(r"\bbusiness\b", re.I)
 FEE_ROWS_IN_AN_ANSWER = 4
 HOURS_ASKED = re.compile(r"\bhours?\b", re.I)
 OPENING_TIME_ASKED = re.compile(r"\bwhen (?:does|do|is)\b.*\b(?:branch(?:es)?|lobby|drive-up)\b.*\bopen\b", re.I)
@@ -126,6 +125,7 @@ CLOSED_ASKED = re.compile(r"^\s*(?:is|are|has|have|did)\s+(.+?)\s+(?:closed|clos
 WHEN_IT_CLOSES_ASKED = re.compile(r"^\s*when\s+(?:will|does|do|did|is|are)\s+(.+?)\s+clos(?:e|ing)\s*\??\s*$", re.I)
 LOWERCASE_WORD = re.compile(r"\b[a-z]{2,}")
 FEWEST_ASKED_WORDS_WITHOUT_A_NAME = 2
+FEWEST_WORDS_THAT_NARROW_A_COUNT = 2
 REFERS_BACK_TO_THE_SUBJECT = re.compile(
     r"^\W*(?:this|it|its|founded|established|the (?:branch|location|acquisition|credit union|office|building)\b)\b", re.I
 )
@@ -144,7 +144,7 @@ TITLE_SITE_SUFFIX = re.compile(r"\s*\|.*$")
 BECOMING_A_MEMBER = re.compile(r"\bbecome a(?: dupaco)? member\b|\bmembership\b", re.I)
 END_OF_ARTICLE = re.compile(r"^#+\s*Handpicked for You.*", re.M | re.S)
 TEASER = re.compile(r"\b(?:min read|keep reading|read more)\b", re.I)
-COUNTED_THING = re.compile(r"\b(?:[Hh]ow many|[Tt]he number of)\s+(?:[A-Z][a-z]+\s+)*([A-Za-z]+)")
+COUNTED_THING = re.compile(r"\b(?i:how many|the number of)\s+(?:[A-Z][a-z]+\s+)*([A-Za-z]+)")
 FULL_SERVICE = re.compile(r"\bfull[- ]service\b", re.I)
 STATED_ABOUT_DUPACO = re.compile(r"\bdupaco\b|\bit has\b|\bour\b|\bfounded in 1948\b", re.I)
 MEMBERSHIP_TOTAL = r"membership (?:totals|has grown to) (?:more than )?\d+(?:,\d{3})*"
@@ -198,7 +198,7 @@ def words_in(text: str) -> list[str]:
 WORDS_THAT_DO_NOT_SEARCH = frozenset(words_in(WORDS_THAT_DO_NOT_SEARCH_TEXT))
 WORDS_A_SHAPE_ALREADY_SATISFIES = frozenset(words_in("address phone number year date"))
 WORDS_ANY_BRANCH_SHARES = frozenset(words_in("branch location drive up lobby"))
-WORDS_THAT_ONLY_ASK_WHEN = frozenset(words_in("next hold held"))
+WORDS_THAT_ONLY_ASK_WHEN = frozenset(words_in("next hold held pass passed happen happened"))
 MEMBER = stem("member")
 COUNTED_AS_BRANCHES = frozenset(stem(word) for word in ("location", "office"))
 WORDS_IN_DUPACOS_OWN_NAME = frozenset(words_in("community credit union"))
@@ -409,9 +409,13 @@ class PassageIndex:
         closed = CLOSED_ASKED.search(question)
         if still_open or closed:
             place = next(group for group in (still_open or closed).groups() if group)
+            leads = YES_IF_CLOSED if closed else NO_IF_CLOSED
             if _names_in(_when_will_it_close(place)):
-                return self._has_it_closed(place, leads=YES_IF_CLOSED if closed else NO_IF_CLOSED)
-            if A_BRANCH_ASKED_ABOUT.search(place):
+                return self._has_it_closed(place, leads)
+            beyond_any_branch = _search_terms(place) - WORDS_ANY_BRANCH_SHARES
+            if A_BRANCH_ASKED_ABOUT.search(place) and beyond_any_branch:
+                return self._has_it_closed(place.title(), leads)
+            if _search_terms(place) and not beyond_any_branch:
                 return self._which_branch()
             if not _search_terms(place):
                 return None
@@ -498,6 +502,9 @@ class PassageIndex:
             ),
             None,
         )
+        if found and shape is DATE_OR_YEAR and ASKED_IN_THE_PAST.search(question):
+            if WRITTEN_AS_STILL_AHEAD.search(found.text) and not self._has_passed(found.text):
+                return None
         if not found or shape is not DATE_OR_YEAR or not STILL_AHEAD_ASKED.search(question):
             return found
         if self._reads_ahead_but_passed(found.text):
@@ -573,7 +580,10 @@ class PassageIndex:
             (sentence, shape.search(sentence).group(0).lower(), passage)
             for _, passage in ranked
             for sentence in SENTENCE_END.split(passage.text)
-            if shape.search(sentence) and STATED_ABOUT_DUPACO.search(sentence) and names <= set(words_in(sentence))
+            if shape.search(sentence)
+            and STATED_ABOUT_DUPACO.search(sentence)
+            and names <= set(words_in(sentence))
+            and (len(terms) < FEWEST_WORDS_THAT_NARROW_A_COUNT or _mentions(sentence, terms))
         ]
         if not statements:
             return None
