@@ -1,6 +1,27 @@
 # Notes
 
-No API keys and no packages: plain rules on the Python standard library, no LLM.
+Rules on the Python standard library answer rates, fees, dates, counts, addresses and hours. An optional LLM helps the rules understand questions and judges answers to open-ended ones. It never writes an answer of its own.
+
+## API key
+
+`ANTHROPIC_API_KEY` is optional and uses a paid API, Claude Sonnet 5.5, through `submission/llm.py`. Without a key, without the package, or when a call fails, the rules answer alone.
+
+- **Rewording.** The model restates each question in the wording the rules understand, such as "five year car loan" as "60-month auto loan". It sees only the question and the wording of the public practice questions, never the site. If the rules refuse the rewording, they answer the original question.
+- **Judging open-ended answers.** Questions with no dedicated rule get a wider search, and the model reads the rules' answer and the passages found. If the rules have an answer, the model can keep it or reject it, which refuses, but never replace it. If the rules have none, the model picks a passage and an excerpt, which is used only if it appears word for word in that passage.
+
+Rate and fee answers do not use the judging step, so every value still comes from the snapshots.
+
+| Questions | Measure | Rules only | With the LLM, 2 runs |
+|---|---|---|---|
+| `eval/public_eval.jsonl` | Accuracy | 0.941 | 0.941 |
+| | Final score | 0.941 | 0.928 to 0.934 |
+| `eval/blind_rewordings.jsonl` | Accuracy | 0.760 | 0.973 |
+| | Paraphrase consistency | 0.732 | 1.0 |
+| | Final score | 0.742 | 0.964 to 0.968 |
+| `eval/dev_rewordings.jsonl` | Accuracy | 0.697 | 0.971 |
+| `eval/topic_questions.jsonl` | Accuracy | 0.406 | 0.580 to 0.587 |
+
+Final scores leave out conflicts. No run gave a stale value. p95 latency is about 2.5 to 3.4 seconds on these sets, and about 6 on the topic questions, where refusals make more calls, against 0.01 to 0.02 for rules alone.
 
 ## What "current" means
 
@@ -16,7 +37,7 @@ No API keys and no packages: plain rules on the Python standard library, no LLM.
 
 `conflicts()` lists contradictions still live in the latest snapshot. A rate that simply changed between snapshots is not a conflict.
 
-- Table rows on any page are compared with the rate pages by product, term, balance tier and overlapping model years, and only the same kind of value, so tiers and rate vs APY never look like conflicts. The rate page wins.
+- Table rows on any page are compared with the rate pages by product, term, balance tier and overlapping model years, and only the same kind of value, so tiers and rate vs APY never look like conflicts. The rate page wins. Auto loans get one entry per term; mortgages get one entry per page.
 - Branch counts: the newest dated statement wins over older and undated pages.
 - The Foundation's founding year: the year most statements give wins.
 
@@ -27,3 +48,6 @@ Rates and fees stated in page text are not compared.
 - General how-to and "what do you offer" questions can return loosely related text.
 - A count can come from a sentence about the total when the question narrows it, such as `How many Dubuque branches does Dupaco have?`.
 - `eval/own_rewordings.jsonl` was written to find misses and then used to fix them, so its score is not a blind measure.
+- `eval/blind_rewordings.jsonl` was written before seeing any answers and only its aggregate scores were read. The model and the design of the LLM steps were chosen partly by that score, so it is flattered.
+- `eval/dev_rewordings.jsonl` rewords the public questions, the same wording the model is shown, so it says little about new topics. `eval/topic_questions.jsonl` covers those: an LLM wrote it from 69 pages of the latest snapshot, half answerable, half asking what the page does not state. Answers must contain one exact phrase, so its scores understate correct answers worded differently.
+- Answerable questions on topics outside the practice set are still mostly missed, at about 0.36.

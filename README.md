@@ -2,7 +2,7 @@
 
 Answers members' questions from dated downloads of a credit union's website: the current value, the right tier, a source, and "I can't confirm that" when the site doesn't say. See [NOTES.md](NOTES.md) for how it decides what's current.
 
-`submission/solution.py` provides the `build()` the harness expects, with `ingest`, `answer` and `conflicts`. No API keys or packages are needed. Python 3.9 or newer.
+`submission/solution.py` provides the `build()` the harness expects, with `ingest`, `answer` and `conflicts`. Python 3.9 or newer. It runs with no packages or keys; set `ANTHROPIC_API_KEY` and install `requirements.txt` (Python 3.10 or newer) to add the optional LLM steps, which [NOTES.md](NOTES.md) explains.
 
 ## Layout
 
@@ -13,8 +13,10 @@ submission/    the system
   rate_facts.py  reading rate tables
   prose.py       searching page text; dates, counts, fees
   conflicts.py   contradictions in the latest snapshot
+  llm.py         optional steps: reword a question, judge answers to open-ended ones
+  phrasings.txt  question wording the LLM is shown, from the public eval
 tests/         unit tests, plus rewordings checked against the real snapshots
-eval/          public_eval.jsonl from the kit, own_rewordings.jsonl written for this system
+eval/          public_eval.jsonl from the kit; the others written for this system
 harness/       the kit's scorer
 starter/       the kit's naive solution
 ```
@@ -26,7 +28,8 @@ The snapshots are not in this repository. Put the five zips in `snapshots_zip/`;
 ```bash
 python3 harness/run_eval.py --submission submission --eval eval/public_eval.jsonl
 python3 harness/run_eval.py --submission submission --eval eval/own_rewordings.jsonl
+python3 harness/run_eval.py --submission submission --eval eval/blind_rewordings.jsonl
 python3 -m unittest discover -s tests
 ```
 
-The public eval scores 0.9411. It doesn't score conflicts, because the kit ships no gold list for the real site.
+The public eval scores 0.9411 accuracy with or without a key. On the blind rewordings, accuracy is 0.76 with rules alone and 0.97 with a key. Neither eval scores conflicts, because the kit ships no gold list for the real site.
