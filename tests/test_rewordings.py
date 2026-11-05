@@ -89,6 +89,29 @@ ANSWERS_THAT_MUST_STATE_A_FACT = (
     ("What award did Dupaco get from Forbes?", "fifth"),
 )
 
+ROUTED_TO_THE_RIGHT_ANSWER = (
+    ("What is the stop payment fee?", "$30.00"),
+    ("What's the overdraft fee?", "$30.00"),
+    ("What is the domestic wire fee?", "$25.00"),
+    ("How much is a 60-month auto loan?", "APR"),
+    ("What's a 12-month certificate going for?", "3.40%"),
+    ("30-year mortgage?", "7.25%"),
+    ("Is the Platinum Visa 9.9%?", "12.50%"),
+    ("Who do I call about a charge on my credit card?", "800-373-7600"),
+    ("What phone number do I call about my Visa charge?", "800-373-7600"),
+    ("Who should I talk to about mortgage rates?", "800-373-7600"),
+)
+
+FEES_AND_LIMITS_THE_SITE_DOES_NOT_STATE = (
+    "How much is a lost debit card?",
+    "What is the fee for a lost debit card?",
+    "How much does it cost to replace a debit card?",
+    "What is the minimum to open a 12-month certificate?",
+    "How do I pay my car loan?",
+    "How can I pay my car loan?",
+    "Can I pay my mortgage at a branch?",
+)
+
 COUNTS_THE_SITE_STATES = (
     ("How many locations does Dupaco have?", "22"),
     ("How many Dupaco locations are there?", "22"),
@@ -189,6 +212,14 @@ class RewordingsAgainstRealSnapshots(unittest.TestCase):
             with self.subTest(question):
                 self.assertIn(fact, self.system.answer(question).text)
 
+    def test_a_question_reaches_the_part_of_the_system_that_knows_the_answer(self):
+        for question, fact in ROUTED_TO_THE_RIGHT_ANSWER:
+            with self.subTest(question):
+                self.assertIn(fact, self.system.answer(question).text)
+
+    def test_a_how_do_i_question_about_rewards_is_answered_not_refused(self):
+        self.assertIn("earn points", self.system.answer("How do I earn rewards with my Visa?").text)
+
     def test_a_count_is_the_newest_dupaco_states_about_itself(self):
         for question, count in COUNTS_THE_SITE_STATES:
             with self.subTest(question):
@@ -226,7 +257,12 @@ class RewordingsAgainstRealSnapshots(unittest.TestCase):
         self.assertLessEqual(len(found), FEWEST_CONFLICTS_WORTH_REVIEWING_BY_HAND)
 
     def test_a_product_or_fact_the_site_does_not_list_is_refused(self):
-        for question in UNLISTED_PRODUCTS + PRODUCTS_FROM_ELSEWHERE_NAMED_AFTER_THE_NOUN + NOTHING_ON_THE_SITE_ANSWERS_THESE:
+        for question in (
+            UNLISTED_PRODUCTS
+            + PRODUCTS_FROM_ELSEWHERE_NAMED_AFTER_THE_NOUN
+            + NOTHING_ON_THE_SITE_ANSWERS_THESE
+            + FEES_AND_LIMITS_THE_SITE_DOES_NOT_STATE
+        ):
             with self.subTest(question):
                 self.assertFalse(self.system.answer(question).confident)
 

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import html
 import math
 import re
 from collections import Counter, defaultdict
@@ -64,6 +65,11 @@ WORDS_THAT_DO_NOT_SEARCH_TEXT = """
 """
 
 LOCATOR_PATH = "/contact"
+FEE_SCHEDULE_PATH_PART = "fee-schedule"
+FEE_AMOUNT = re.compile(r"\$\d|\d%|\bfree\b", re.I)
+FOOTNOTE_AFTER_THE_AMOUNT = re.compile(r"\s+\*.*$")
+BUSINESS_ROW = re.compile(r"\bbusiness\b", re.I)
+FEE_ROWS_IN_AN_ANSWER = 4
 HOURS_ASKED = re.compile(r"\bhours?\b", re.I)
 OPENING_TIME_ASKED = re.compile(r"\bwhen (?:does|do|is)\b.*\b(?:branch(?:es)?|lobby|drive-up)\b.*\bopen\b", re.I)
 CLOSING_TIME_ASKED = re.compile(r"\bwhen (?:does|do|is)\b.*\b(?:branch(?:es)?|lobby|drive-up)\b.*\bclose\b", re.I)
@@ -84,7 +90,7 @@ WHEN_DUPACO_WAS_FOUNDED = "When was Dupaco founded?"
 ROUTING_ASKED = re.compile(r"\brouting\b|\baba\b", re.I)
 HOW_TO_REACH_ASKED = re.compile(
     r"\bphone (?:numbers?|for)\b|\b(?:your|dupaco's) phone\b|\bcontact information\b"
-    r"|\b(?:who|number)\b.*\bcall\b|\bcall (?:you|dupaco|someone)\b",
+    r"|\b(?:who|number)\b.*\b(?:call|talk|speak)\b|\bcall (?:you|dupaco|someone)\b",
     re.I,
 )
 
@@ -141,6 +147,14 @@ class Passage:
 
 
 @dataclass(frozen=True)
+class FeeRow:
+    label: str
+    amount: str
+    words: frozenset[str]
+    url: str
+
+
+@dataclass(frozen=True)
 class Found:
     text: str
     urls: tuple[str, ...]
@@ -169,11 +183,16 @@ WORDS_IN_DUPACOS_OWN_NAME = frozenset(words_in("community credit union"))
 WORDS_THAT_NAME_NOTHING_ALONE = WORDS_ANY_BRANCH_SHARES | WORDS_IN_DUPACOS_OWN_NAME
 CLOSE = _without_ending(stem("close"))
 WORDS_ROUTING_IS_FOUND_BY = frozenset(words_in("routing"))
+WORDS_THAT_ASK_FOR_A_FEE = frozenset(words_in("fee cost charge charged price penalty amount"))
+BUSINESS = next(iter(words_in("business")))
 NO_IF_CLOSED = ("No.", "Yes, for now.")
 YES_IF_CLOSED = ("Yes.", "Not yet.")
 WORDS_NAMING_A_KIND_OF_HOURS = frozenset(words_in("lobby drive"))
 WORDS_ABOUT_REACHING_DUPACO = frozenset(
-    words_in("call contact information update change customer member service support main general credit union talk speak reach someone")
+    words_in(
+        "call contact information update change customer member service support main general credit union talk speak "
+        "reach someone charge credit card debit visa mortgage loan rate question"
+    )
 )
 
 
@@ -242,6 +261,7 @@ class PassageIndex:
         self._postings: dict[str, list[int]] = defaultdict(list)
         self._document_frequency: Counter = Counter()
         self._links: list[tuple[str, str]] = []
+        self._fee_rows: dict[str, FeeRow] = {}
         seen_paths: set[str] = set()
         newest_by_text: dict[str, Passage] = {}
         pages_repeating: Counter = Counter()
@@ -250,6 +270,9 @@ class PassageIndex:
             if path in seen_paths or path.startswith(EXCLUDED_PAGE_PREFIXES) or is_listing_page(path):
                 continue
             seen_paths.add(path)
+            if FEE_SCHEDULE_PATH_PART in path:
+                for row in _fee_rows_in(page.markdown, page.url):
+                    self._fee_rows.setdefault(row.label, row)
             title_words = frozenset(words_in(page.title) + words_in(path.replace("-", " ").replace("/", " ")))
             own_date = published_date(page.markdown)
             published = own_date or taken_on
@@ -497,6 +520,17 @@ class PassageIndex:
         sentence, _, passage = max(statements, key=strength)
         return Found(sentence, (passage.url,), passage.text)
 
+    def fee_for(self, question: str) -> Optional[Found]:
+        terms = _search_terms(question) - WORDS_THAT_ASK_FOR_A_FEE
+        stating = [row for row in self._fee_rows.values() if terms and terms <= row.words]
+        if BUSINESS not in terms and any(BUSINESS not in row.words for row in stating):
+            stating = [row for row in stating if BUSINESS not in row.words]
+        if not stating:
+            return None
+        chosen = stating[:FEE_ROWS_IN_AN_ANSWER]
+        listed = "; ".join(f"{row.label}: {row.amount}" for row in chosen)
+        return Found(f"{listed}.", (chosen[0].url,), listed)
+
     def _phone_answer(self, ranked: list[tuple[float, Passage]], terms: set[str]) -> Optional[Found]:
         stating = [passage for _, passage in ranked if passage.trust == TRUST_OF_SITE_PAGE]
         if terms <= WORDS_ABOUT_REACHING_DUPACO:
@@ -552,6 +586,16 @@ class PassageIndex:
             return None
         page = votes.most_common(1)[0][0]
         return Found(page, (page,), labels[page])
+
+
+def _fee_rows_in(markdown: str, url: str) -> list[FeeRow]:
+    rows = []
+    for line in markdown.splitlines():
+        cells = [html.unescape(html.unescape(cell)).strip() for cell in line.strip().strip("|").split("|")]
+        if line.startswith("|") and len(cells) >= 2 and FEE_AMOUNT.search(cells[1]):
+            label = cells[0]
+            rows.append(FeeRow(label, FOOTNOTE_AFTER_THE_AMOUNT.sub("", cells[1]), frozenset(words_in(label)), url))
+    return rows
 
 
 def _title_of(passage: Passage) -> str:

@@ -7,15 +7,24 @@ from typing import Optional
 from rate_facts import parse_term_months, stem, TERM, WORD
 
 RATE_INTENT = re.compile(
-    r"\b(rates?|apys?|aprs?|interest|dividends?|yields?|earns?|earning|pays?|paying|charges?|percent|would i get)\b",
+    r"\b(rates?|apys?|aprs?|interest|dividends?|yields?|earns?|earning|pays?|paying|charges?|percent|would i get)\b"
+    r"|\d\s*%",
     re.I,
 )
 NON_RATE_TOPIC = re.compile(
     r"\b(fees?|penalt(?:y|ies)|overdr(?:aft|aw\w*)|stop payment|deductible|minimum|"
-    r"(?:apple|google|samsung) pay|earn (?:points|rewards|cash back)|percent down|down payment)\b",
+    r"(?:apple|google|samsung) pay|earn (?:points|rewards|cash back)|percent down|\d\s*%\s*down|down payment)\b",
     re.I,
 )
-FEE_ASKED = re.compile(r"\b(fees?|penalt(?:y|ies)|overdr(?:aft|aw\w*)|stop payment)\b", re.I)
+FEE_ASKED = re.compile(
+    r"\b(fees?|penalt(?:y|ies)|overdr(?:aft|aw\w*)|stop payment|costs?)\b"
+    r"|\bhow much\b.*\b(?:lost|stolen|replac\w*)\b",
+    re.I,
+)
+REACHING_SOMEONE = re.compile(
+    r"\bphone\b|\bwho\b.*\b(?:call|talk to|speak)\b|\b(?:call|contact)\b.*\babout\b|\bnumber\b.*\bcall\b",
+    re.I,
+)
 ASKS_HOW_RATES_WORK = re.compile(r"^\s*(?:why|when|will|how (?:is|are|often|does|do)|(?:does|do) my)\b", re.I)
 PAYING_A_BILL = re.compile(r"\b(?:can|do|should|must|have to)(?: i)? pay\b|\bpay (?:off|my)\b", re.I)
 CALENDAR_DATE = re.compile(
@@ -38,7 +47,14 @@ COMPARED_TO_A_PERCENT = re.compile(
     r"|or (?:more|less|higher|lower|better))\b",
     re.I,
 )
-PRICE_ASKED = re.compile(r"\bhow much (?:is|are|would|does|do you)\b|\bcurrent\b", re.I)
+HOW_MUCH_ASKED = r"\bhow much (?:is|are|would|does|do you)\b"
+PRICE_ASKED = re.compile(HOW_MUCH_ASKED + r"|\bcurrent\b", re.I)
+PRICE_OF_A_TERM_ASKED = re.compile(
+    HOW_MUCH_ASKED + r"|\bgoing for\b|\btell me about\b"
+    r"|^\s*what(?:'s|’s| is| are)\s+(?:the|a|an|your)\s+(?:current\s+)?\d"
+    r"|^\s*\d+[-\s]\w+(?:\s+\w+){0,2}\s*\?*\s*$",
+    re.I,
+)
 MODEL_YEAR = re.compile(r"\b(20\d\d)\b")
 AMOUNT = re.compile(r"(\$\s*)?\b(\d{1,3}(?:,\d{3})+|\d+)(\.\d+)?\s*(k|thousand|dollars)?\b", re.I)
 SHORTEST_BARE_AMOUNT_DIGITS = 5
@@ -107,7 +123,8 @@ PRODUCT_NOUNS = frozenset(
 MODIFIER_BETWEEN_NAME_AND_NOUN = stem("business")
 CAPITALIZED_AFTER_FIRST_WORD = re.compile(r"(?<=[\s-])[A-Z][A-Za-z']*")
 FAMILIES_WHERE_CAPITALS_ARE_VEHICLE_MAKES = frozenset({"auto", "recreation"})
-TOPICS_OTHER_THAN_A_RATE = (NON_RATE_TOPIC, PAYING_A_BILL, LINK_INTENT, HOW_TO_ASKED)
+TOPICS_AN_UNSTATED_RATE_MAY_BE_ASKED_ALONGSIDE = (PAYING_A_BILL, LINK_INTENT, HOW_TO_ASKED, REACHING_SOMEONE)
+TOPICS_OTHER_THAN_A_RATE = (NON_RATE_TOPIC, *TOPICS_AN_UNSTATED_RATE_MAY_BE_ASKED_ALONGSIDE)
 
 
 @dataclass(frozen=True)
@@ -164,12 +181,18 @@ def family_of_rates_asked_about(question: str) -> Optional[str]:
     return _family_in(question)
 
 
+def asks_about_a_fee(question: str) -> bool:
+    return bool(FEE_ASKED.search(question))
+
+
 def search_may_answer(question: str) -> bool:
-    if FEE_ASKED.search(question) or ASKS_HOW_RATES_WORK.search(question) and RATE_INTENT.search(question):
+    if PAYING_A_BILL.search(question) and _family_in(question):
         return False
-    if not RATE_INTENT.search(question) and not _asks_for_a_rate_without_saying_so(question):
-        return True
-    return any(topic.search(question) for topic in TOPICS_OTHER_THAN_A_RATE)
+    if RATE_INTENT.search(question):
+        return any(topic.search(question) for topic in TOPICS_OTHER_THAN_A_RATE)
+    if _asks_for_a_rate_without_saying_so(question):
+        return any(topic.search(question) for topic in TOPICS_AN_UNSTATED_RATE_MAY_BE_ASKED_ALONGSIDE)
+    return True
 
 
 def _asks_for_a_rate_without_saying_so(question: str) -> bool:
@@ -177,9 +200,13 @@ def _asks_for_a_rate_without_saying_so(question: str) -> bool:
 
 
 def _asks_for_a_rate(question: str) -> bool:
-    if not RATE_INTENT.search(question):
+    if not RATE_INTENT.search(question) and not _asks_the_price_of_a_term(question):
         return False
     return not any(topic.search(question) for topic in (*TOPICS_OTHER_THAN_A_RATE, ASKS_HOW_RATES_WORK))
+
+
+def _asks_the_price_of_a_term(question: str) -> bool:
+    return bool(TERM.search(question) and PRICE_OF_A_TERM_ASKED.search(question) and _family_in(question))
 
 
 def _family_in(question: str) -> Optional[str]:
