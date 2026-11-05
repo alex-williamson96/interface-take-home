@@ -1,5 +1,8 @@
 import importlib.util
+import os
+import subprocess
 import sys
+import textwrap
 import unittest
 from pathlib import Path
 
@@ -459,6 +462,25 @@ class AnswersFromPageText(unittest.TestCase):
         )
         answer = system_with_pages((NEWS_URL + "a", page)).answer("What is the Home$tart program?").text
         self.assertIn("$15,000", answer)
+
+    def test_tied_passages_rank_the_same_way_under_every_hash_seed(self):
+        program = textwrap.dedent("""
+            import os, sys
+            sys.path[:0] = [{harness!r}, {submission!r}]
+            from contract import Page, Snapshot
+            from knowledge import KnowledgeSystem
+            pages = [Page(f"https://www.dupaco.com/newsroom/{{n}}", f"Branch closing {{n}}", f"This branch closed on March {{n}}, 2026.", "2026-09-28") for n in range(1, 9)]
+            system = KnowledgeSystem()
+            system.ingest(Snapshot("s", "2026-09-28", pages))
+            print(system.answer("When did the branch close?").text)
+        """).format(harness=str(ROOT / "harness"), submission=str(ROOT / "submission"))
+        answers = {
+            subprocess.run(
+                [sys.executable, "-c", program], env={**os.environ, "PYTHONHASHSEED": seed}, capture_output=True, text=True, check=True
+            ).stdout
+            for seed in ("1", "2", "3")
+        }
+        self.assertEqual(len(answers), 1)
 
     def test_a_charter_area_answer_says_which_states(self):
         page = "You can join if you live within our charter area.\n\n# Local\n\nYou can find us in Iowa, Illinois and Wisconsin."

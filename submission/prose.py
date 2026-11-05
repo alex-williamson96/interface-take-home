@@ -52,6 +52,7 @@ PAGES_CITED = 4
 LOWEST_COVERAGE_TO_ANSWER = 0.6
 SHARE_OF_TOP_SCORE_CONSIDERED_TIED = 0.9
 TITLE_MATCH_BONUS = 0.25
+DIGITS_THAT_RANK_A_PASSAGE = 9
 LOWEST_SHARE_OF_BEST_SENTENCE_KEPT = 0.5
 LANDING_PAGE_SUFFIX = "-lp"
 
@@ -351,7 +352,7 @@ class PassageIndex:
     ) -> list[tuple[float, Passage]]:
         candidates = {position for term in terms for position in self._postings.get(term, [])}
         ranked = []
-        for position in candidates:
+        for position in sorted(candidates):
             passage = self._passages[position]
             if not names <= passage.searchable_words:
                 continue
@@ -363,7 +364,8 @@ class PassageIndex:
             specific_enough = title_matched or len(matched_in_body) >= fewest_body_matches
             if coverage >= LOWEST_COVERAGE_TO_ANSWER and specific_enough:
                 title_share = len(terms & passage.title_words) / len(terms)
-                ranked.append((coverage * passage.trust * (1 + TITLE_MATCH_BONUS * title_share), passage))
+                score = round(coverage * passage.trust * (1 + TITLE_MATCH_BONUS * title_share), DIGITS_THAT_RANK_A_PASSAGE)
+                ranked.append((score, passage))
         ranked.sort(key=lambda scored: scored[0], reverse=True)
         return ranked
 
@@ -525,13 +527,16 @@ class PassageIndex:
             if terms <= passage.searchable_words and passage.trust > TRUST_OF_LEAST_TRUSTED
         ]
         titled_with_it = [passage for passage in stating_it if terms <= passage.title_words]
-        by_page: dict[str, Passage] = {}
+        by_page: dict[str, list[Passage]] = defaultdict(list)
         for passage in titled_with_it or stating_it:
-            by_page.setdefault(passage.url, passage)
+            by_page[passage.url].append(passage)
         if not by_page:
             return None
-        pages = list(by_page.values())[:SCHEDULES_IN_AN_ANSWER]
-        dated = [(page, found) for page in pages if (found := self._date_on_page(question, page))]
+        first_date_on_each_page = (
+            next(((page, found) for page in passages if (found := self._date_on_page(question, page))), None)
+            for passages in by_page.values()
+        )
+        dated = [page_and_date for page_and_date in first_date_on_each_page if page_and_date][:SCHEDULES_IN_AN_ANSWER]
         if not dated:
             return None
         if STILL_AHEAD_ASKED.search(question):
