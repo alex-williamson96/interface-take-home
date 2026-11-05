@@ -4,8 +4,9 @@ from collections import Counter
 from dataclasses import dataclass
 from typing import Optional
 
+from conflicts import branch_count_conflict, rate_conflicts
 from contract import Answer, Conflict, Snapshot, Source
-from prose import Found, PassageIndex
+from prose import EXCLUDED_PAGE_PREFIXES, Found, PassageIndex
 from question import (
     BUSINESS_ASKED,
     RateQuestion,
@@ -14,7 +15,7 @@ from question import (
     parse_rate_question,
     search_may_answer,
 )
-from rate_facts import RateFact, extract_rate_facts, stem
+from rate_facts import RateFact, extract_rate_facts, extract_table_facts, page_path, stem
 
 REFUSAL_TEXT = "I can't confirm that from the website. Please contact Dupaco."
 JUMBO = stem("jumbo")
@@ -30,6 +31,7 @@ class IndexedSnapshot:
     snapshot_id: str
     taken_on: str
     facts: tuple[RateFact, ...]
+    facts_on_every_page: tuple[RateFact, ...]
     passages: PassageIndex
 
 
@@ -39,10 +41,15 @@ class KnowledgeSystem:
 
     def ingest(self, snapshot: Snapshot) -> None:
         facts: list[RateFact] = []
+        facts_on_every_page: list[RateFact] = []
         for page in snapshot.pages:
             facts.extend(extract_rate_facts(page.url, page.markdown))
+            if not page_path(page.url).startswith(EXCLUDED_PAGE_PREFIXES):
+                facts_on_every_page.extend(extract_table_facts(page.url, page.markdown))
         passages = PassageIndex(snapshot.pages, snapshot.taken_on)
-        self._snapshots.append(IndexedSnapshot(snapshot.snapshot_id, snapshot.taken_on, tuple(facts), passages))
+        self._snapshots.append(
+            IndexedSnapshot(snapshot.snapshot_id, snapshot.taken_on, tuple(facts), tuple(facts_on_every_page), passages)
+        )
 
     def answer(self, question: str, as_of: Optional[str] = None) -> Answer:
         snapshot = self._snapshot_for(as_of)
@@ -60,7 +67,12 @@ class KnowledgeSystem:
         )
 
     def conflicts(self) -> list[Conflict]:
-        return []
+        if not self._snapshots:
+            return []
+        latest = self._snapshots[-1]
+        found = rate_conflicts(latest.facts_on_every_page, latest.snapshot_id)
+        branches = branch_count_conflict(latest.passages, latest.snapshot_id)
+        return found + [branches] if branches else found
 
     def _snapshot_for(self, as_of: Optional[str]) -> Optional[IndexedSnapshot]:
         eligible = [s for s in self._snapshots if as_of is None or s.taken_on <= as_of]

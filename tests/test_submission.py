@@ -392,6 +392,82 @@ class AnswersFromPageText(unittest.TestCase):
         self.assertNotIn("8 a.m.-4 p.m.", answer)
 
 
+
+class Conflicts(unittest.TestCase):
+    LANDING_URL = "https://www.dupaco.com/offer-lp"
+
+    @staticmethod
+    def rows(*rows: str) -> str:
+        return "Rates\n\n| Loan | Rate | APR |\n| --- | --- | --- |\n" + "\n".join(rows) + "\n"
+
+    def conflicts_between(self, sheet: str, landing: str) -> list:
+        return system_with_pages((RATES_URL, sheet), (self.LANDING_URL, landing)).conflicts()
+
+    def test_a_page_still_showing_an_old_rate_is_a_conflict_the_rate_page_wins(self):
+        found = self.conflicts_between(
+            self.rows("| Mortgage 30-Year Fixed | 7.25% | 7.29% |"), self.rows("| Mortgage 30-Year Fixed | 6.00% | 6.04% |")
+        )
+        self.assertEqual(len(found), 1)
+        self.assertTrue({"6.00%", "6.04%", "7.25%", "7.29%"} <= set(found[0].values))
+        self.assertIn("7.29%", found[0].resolution)
+        self.assertIn("/rates", found[0].reason)
+        self.assertIn("/offer-lp", found[0].reason)
+
+    def test_tiers_and_the_same_number_written_differently_are_not_conflicts(self):
+        sheet = self.rows("| Mortgage 15-Year Fixed | 6.75% | 6.88% |", "| Mortgage 30-Year Fixed | 7.25% | 7.29% |")
+        landing = self.rows("| Mortgage 15-Year Fixed | 6.750% | 6.880% |", "| Mortgage 30-Year Fixed | 7.250% | 7.290% |")
+        self.assertEqual(self.conflicts_between(sheet, landing), [])
+
+    def test_a_rate_and_an_apr_are_different_facts_not_a_conflict(self):
+        landing = "Rates\n\n| Loan | Rate |\n| --- | --- |\n| Mortgage 30-Year Fixed | 7.25% |\n"
+        apr_only = "Rates\n\n| Loan | APR |\n| --- | --- |\n| Mortgage 30-Year Fixed | 7.29% |\n"
+        self.assertEqual(self.conflicts_between(apr_only, landing), [])
+
+    def test_another_product_at_the_same_balance_tier_is_not_a_conflict(self):
+        table = "Rates\n\n| Account | Balance | APY |\n| --- | --- | --- |\n| {} | $25,000 - $99,999.99 | {} |\n"
+        found = self.conflicts_between(table.format("Investor's Choice Money Market", "0.35%"), table.format("Achieve Money Market", "3.25%"))
+        self.assertEqual(found, [])
+
+    def test_two_rows_on_one_page_are_never_compared_with_each_other(self):
+        sheet = self.rows("| Platinum Visa | 12.50% | 12.50% |", "| Platinum Visa Introductory | 2.90% | 2.90% |")
+        self.assertEqual(system_with_pages((RATES_URL, sheet)).conflicts(), [])
+
+    def test_several_pages_repeating_the_same_old_rate_are_one_conflict(self):
+        old = self.rows("| Mortgage 30-Year Fixed | 6.00% | 6.04% |")
+        found = system_with_pages(
+            (RATES_URL, self.rows("| Mortgage 30-Year Fixed | 7.25% | 7.29% |")),
+            ("https://www.dupaco.com/one-lp", old),
+            ("https://www.dupaco.com/two-lp", old),
+        ).conflicts()
+        self.assertEqual(len(found), 1)
+        self.assertIn("/one-lp", found[0].topic)
+        self.assertIn("/two-lp", found[0].topic)
+
+    def test_a_model_year_tier_relabelled_since_is_still_compared(self):
+        sheet = "Rates\n\n| Auto Loans | APR |\n| --- | --- |\n| 2024-27 Model Year 60 Months | 5.39% |\n| 2021-23 Model Year 60 Months | 5.64% |\n"
+        landing = "Rates\n\n| Auto Loans | APR |\n| --- | --- |\n| 2023-26 Model Year 60 Months | 5.34% |\n"
+        found = self.conflicts_between(sheet, landing)
+        self.assertEqual(len(found), 1)
+        self.assertTrue({"5.34%", "5.39%"} <= set(found[0].values))
+        self.assertNotIn("5.64%", found[0].values)
+
+    def test_only_the_latest_snapshot_counts(self):
+        system = KnowledgeSystem()
+        system.ingest(snapshot("2026-05-12", (RATES_URL, self.rows("| Mortgage 30-Year Fixed | 7.25% | 7.29% |")),
+                               (self.LANDING_URL, self.rows("| Mortgage 30-Year Fixed | 6.00% | 6.04% |"))))
+        system.ingest(snapshot("2026-09-28", (RATES_URL, self.rows("| Mortgage 30-Year Fixed | 7.25% | 7.29% |"))))
+        self.assertEqual(system.conflicts(), [])
+
+    def test_an_undated_page_disagreeing_with_the_newest_branch_count_is_a_conflict(self):
+        found = system_with_pages(
+            ("https://www.dupaco.com/about", "Leaders across our 18 branches work together."),
+            (NEWS_URL + "old", article("March 1, 2026", "It has 23 branch office locations.")),
+            (NEWS_URL + "new", article("May 1, 2026", "It has 22 branch office locations.")),
+        ).conflicts()
+        self.assertEqual(found[0].resolution, "22")
+        self.assertEqual(set(found[0].values), {"18", "22"})
+
+
 class AnswerBehaviour(unittest.TestCase):
     def test_as_of_answers_from_the_newest_snapshot_on_or_before_that_date(self):
         system = system_with_two_dates()

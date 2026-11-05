@@ -230,9 +230,11 @@ def read_table_ends(lines: list[str]) -> Iterator[tuple[int, int]]:
 
 
 def extract_rate_facts(url: str, markdown: str) -> list[RateFact]:
+    return extract_table_facts(url, markdown) if is_rate_page(page_path(url)) else []
+
+
+def extract_table_facts(url: str, markdown: str) -> list[RateFact]:
     path = page_path(url)
-    if not is_rate_page(path):
-        return []
     lines = markdown.splitlines()
     facts: list[RateFact] = []
     for start, end in read_table_ends(lines):

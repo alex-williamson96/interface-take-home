@@ -64,6 +64,8 @@ DATES_THE_SITE_STATES = (
     ("When is the next Gift of Innovation grant cycle?", "2026"),
 )
 
+FEWEST_CONFLICTS_WORTH_REVIEWING_BY_HAND = 10
+
 UNLISTED_PRODUCTS = (
     "What is the rate on a 5/1 ARM?",
     "What is the 7/1 ARM rate?",
@@ -139,6 +141,17 @@ class RewordingsAgainstRealSnapshots(unittest.TestCase):
 
     def test_the_two_years_the_site_gives_for_the_foundation_are_noted(self):
         self.assertIn("2011, 2012", self.system.answer("When was the Dupaco Foundation established?").conflict_note)
+
+    def test_conflicts_name_the_stale_pages_and_only_those(self):
+        found = self.system.conflicts()
+        def conflict_naming(*values: str):
+            return next(c for c in found if set(values) <= set(c.values))
+        self.assertIn("7.29%", conflict_naming("6.037%", "5.954%", "7.29%").resolution)
+        self.assertIn("5.39%", conflict_naming("5.34%", "5.39%").resolution)
+        self.assertIn("2.50%", conflict_naming("3.00%", "2.50%").resolution)
+        self.assertEqual(conflict_naming("18", "22").resolution, "22")
+        self.assertNotIn("243597822", " ".join(value for c in found for value in c.values))
+        self.assertLessEqual(len(found), FEWEST_CONFLICTS_WORTH_REVIEWING_BY_HAND)
 
     def test_a_product_or_fact_the_site_does_not_list_is_refused(self):
         for question in UNLISTED_PRODUCTS + PRODUCTS_FROM_ELSEWHERE_NAMED_AFTER_THE_NOUN + NOTHING_ON_THE_SITE_ANSWERS_THESE:

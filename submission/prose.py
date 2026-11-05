@@ -82,6 +82,7 @@ DATE_OR_YEAR = re.compile(PUBLISHED.pattern + r"|\b(?:19|20)\d\d\b")
 FOUNDING_ASKED = re.compile(r"\b(?:founded|established)\b", re.I)
 FOUNDING_YEAR = re.compile(r"\b(?:founded|founding|established)\b\D{0,10}((?:19|20)\d\d)\b", re.I)
 CLAUSE_BREAK = re.compile(r",\s+(?!\d)")
+BRANCH_COUNT = re.compile(r"(?<![\d,])\b(\d{1,3}) (?:\w+ )?branch(?:es)?\b", re.I)
 FULL_DATE = re.compile(rf"\b({'|'.join(MONTH_NUMBERS)})[a-z]*\.? (\d{{1,2}}), (20\d\d)\b")
 BARE_YEAR = re.compile(r"\b(?:19|20)\d\d\b")
 STILL_AHEAD_ASKED = re.compile(r"\bwill\b|\bgoing to\b|\b(?:does|do|is|are)\b", re.I)
@@ -442,6 +443,15 @@ class PassageIndex:
             stating += [p for p in self._passages if page_path(p.url) == LOCATOR_PATH and PHONE.search(p.text)]
         best = next(iter(stating), None)
         return Found(f"Call {PHONE.search(best.text).group(0)}.", (best.url,), best.text) if best else None
+
+    def branch_count_statements(self) -> tuple[Optional[tuple[str, Passage]], list[tuple[str, Passage]]]:
+        statements = [(found.group(1), p) for p in self._passages if (found := BRANCH_COUNT.search(p.text))]
+        dated = [statement for statement in statements if statement[1].has_its_own_date]
+        newest = max(dated, key=lambda statement: statement[1].published, default=None)
+        undated_site_pages = [
+            statement for statement in statements if not statement[1].has_its_own_date and statement[1].trust == TRUST_OF_SITE_PAGE
+        ]
+        return newest, undated_site_pages
 
     def _pages_stating(self, value: str, best: Passage) -> tuple[str, ...]:
         stating = [p for p in self._passages if value in p.text]
