@@ -16,7 +16,7 @@ WORD_ENDING = re.compile(r"(?:ibility|ible|ation|ition|tion|ized|izes|ize|ing|ed
 SHORTEST_WORD_WITH_ITS_ENDING_REMOVED = 5
 WORDS_THAT_MEAN_SOMETHING_ELSE_WITHOUT_THEIR_ENDING = frozenset({"foundation", "founded"})
 ROOTS_OF_IRREGULAR_WORDS = {"closure": "clos"}
-SENTENCE_END = re.compile(r"(?<=[.!?])\s+(?=[A-Z\"“])")
+SENTENCE_END = re.compile(r"(?<=[.!?])(?<![\s.][A-Z]\.)\s+(?=[A-Z\"“])")
 PUBLISHED = re.compile(
     r"\b(January|February|March|April|May|June|July|August|September|October|November|December) (\d{1,2}), (20\d\d)\b"
 )

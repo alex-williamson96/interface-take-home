@@ -186,6 +186,11 @@ class AnswersFromPageText(unittest.TestCase):
         answer = system_with_pages((NEWS_URL + "a", page)).answer("When will the branch close?").text
         self.assertEqual(("Galena" in answer) + ("Asbury" in answer), 1, answer)
 
+    def test_an_initial_does_not_end_a_sentence(self):
+        page = article("June 1, 2026", "The Hoefer Foundation was established in 2011 to honor Robert W. Hoefer of Dubuque.")
+        answer = system_with_pages((NEWS_URL + "a", page)).answer("When was the Hoefer Foundation established?").text
+        self.assertTrue(answer.endswith("Robert W. Hoefer of Dubuque."), answer)
+
     def test_a_date_question_about_an_unnamed_branch_asks_which_when_pages_differ(self):
         closing = article("June 1, 2026", "This branch will close on {}.")
         system = KnowledgeSystem()
