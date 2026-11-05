@@ -219,7 +219,7 @@ class AnswersFromPageText(unittest.TestCase):
         old = "# Old news\n\nWritten by [Emily](https://www.dupaco.com/a) | Oct 8, 2021 12:57:34 PM\n\nFounded in 1948, Dupaco has 143,000 members."
         new = article("May 5, 2026", "Founded in 1948, Dupaco has 179,000 members.")
         answer = system_with_pages((NEWS_URL + "old", old), (NEWS_URL + "new", new)).answer("When was Dupaco founded?")
-        self.assertIn("179,000", answer.text)
+        self.assertEqual(answer.sources[0].url, NEWS_URL + "new")
 
     def test_a_date_question_answers_with_one_sentence_preferring_a_full_date_over_a_year(self):
         page = article(
@@ -241,6 +241,23 @@ class AnswersFromPageText(unittest.TestCase):
         system = KnowledgeSystem()
         system.ingest(Snapshot("s", "2026-09-28", [Page(NEWS_URL + "a", "Hoefer Foundation awards", page, "2026-09-28")]))
         self.assertFalse(system.answer("When was the Hoefer Foundation founded?").confident)
+
+    def test_a_date_answer_stops_at_the_clause_holding_the_date(self):
+        page = article("June 1, 2026", "Founded in 1948 by ten employees, membership has grown to more than 179,000.")
+        answer = system_with_pages((NEWS_URL + "a", page)).answer("When was Dupaco founded?").text
+        self.assertTrue(answer.endswith("Founded in 1948 by ten employees."), answer)
+
+    def test_which_branch_lists_only_pages_titled_with_what_was_asked(self):
+        system = KnowledgeSystem()
+        system.ingest(Snapshot("s", "2026-09-28", [
+            Page(NEWS_URL + "a", "Galena branch closure", article("June 1, 2026", "This branch will close in 2026."), "2026-09-28"),
+            Page(NEWS_URL + "b", "Asbury branch closing", article("June 1, 2026", "This branch will close in 2024."), "2026-09-28"),
+            Page(NEWS_URL + "c", "Bank acquisition", article("June 1, 2026", "Old branches will close in 2022."), "2026-09-28"),
+        ]))
+        answer = system.answer("When will the branch close?").text
+        self.assertIn("Galena branch closure", answer)
+        self.assertIn("Asbury branch closing", answer)
+        self.assertNotIn("Bank acquisition", answer)
 
     def test_a_byline_date_is_not_the_answer_to_a_date_question(self):
         page = "New branch office to open in Coralville\n\nWritten by [Emily](https://www.dupaco.com/a) | Oct 8, 2021 12:57:34 PM"

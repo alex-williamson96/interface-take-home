@@ -15,6 +15,7 @@ QUESTION_WORD = re.compile(r"[a-z0-9$]+(?:'[a-z]+)?")
 WORD_ENDING = re.compile(r"(?:ibility|ible|ation|ition|tion|ized|izes|ize|ing|ed|es|e)$")
 SHORTEST_WORD_WITH_ITS_ENDING_REMOVED = 5
 WORDS_THAT_MEAN_SOMETHING_ELSE_WITHOUT_THEIR_ENDING = frozenset({"foundation", "founded"})
+ROOTS_OF_IRREGULAR_WORDS = {"closure": "clos"}
 SENTENCE_END = re.compile(r"(?<=[.!?])\s+(?=[A-Z\"“])")
 PUBLISHED = re.compile(
     r"\b(January|February|March|April|May|June|July|August|September|October|November|December) (\d{1,2}), (20\d\d)\b"
@@ -78,6 +79,7 @@ HOW_TO_REACH_ASKED = re.compile(
 )
 
 DATE_OR_YEAR = re.compile(PUBLISHED.pattern + r"|\b(?:19|20)\d\d\b")
+CLAUSE_BREAK = re.compile(r",\s+(?!\d)")
 FULL_DATE = re.compile(r"\b[A-Z][a-z]{2,8}\.? \d{1,2}, 20\d\d\b")
 TIME_OF_DAY = re.compile(r"\d(?::\d\d)?\s*[ap]\.?m\b", re.I)
 HOURS_BLOCK = re.compile(r"\b(?:lobby|drive-up)\b.*" + TIME_OF_DAY.pattern, re.I | re.S)
@@ -115,6 +117,8 @@ class Found:
 
 
 def _without_ending(word: str) -> str:
+    if word in ROOTS_OF_IRREGULAR_WORDS:
+        return ROOTS_OF_IRREGULAR_WORDS[word]
     if len(word) < SHORTEST_WORD_WITH_ITS_ENDING_REMOVED or word in WORDS_THAT_MEAN_SOMETHING_ELSE_WITHOUT_THEIR_ENDING:
         return word
     return WORD_ENDING.sub("", word)
@@ -313,7 +317,8 @@ class PassageIndex:
             for _, passage in ranked
             if terms <= passage.searchable_words and passage.trust > TRUST_OF_LEAST_TRUSTED
         ]
-        by_page = {passage.url: passage for passage in reversed(stating_it)}
+        titled_with_it = [passage for passage in stating_it if terms <= passage.title_words]
+        by_page = {passage.url: passage for passage in reversed(titled_with_it or stating_it)}
         if not by_page:
             return None
         pages = list(by_page.values())[:SCHEDULES_IN_AN_ANSWER]
@@ -470,6 +475,12 @@ def _sentence_stating_the_date(question: str, sentences: list[str], names: set[s
     return max(sentences, key=strength)
 
 
+def _through_the_date(sentence: str) -> str:
+    end_of_date = [found.end() for found in DATE_OR_YEAR.finditer(sentence)][-1]
+    clause_break = CLAUSE_BREAK.search(sentence, end_of_date)
+    return sentence[: clause_break.start()] + "." if clause_break else sentence
+
+
 def _answer_from_page(
     question: str, best: Passage, page: list[Passage], names: set[str], shape: Optional[re.Pattern]
 ) -> Optional[Found]:
@@ -486,10 +497,10 @@ def _answer_from_page(
     if best_overlap == 0:
         return None
     if shape is DATE_OR_YEAR:
-        answer = [_sentence_stating_the_date(question, list(passage_of), names)]
-    else:
-        worth_keeping = [s for s in passage_of if overlap[s] >= best_overlap * LOWEST_SHARE_OF_BEST_SENTENCE_KEPT]
-        kept = set(sorted(worth_keeping, key=lambda s: overlap[s], reverse=True)[:SENTENCES_IN_AN_ANSWER])
-        answer = [s for s in passage_of if s in kept]
+        sentence = _sentence_stating_the_date(question, list(passage_of), names)
+        return Found(_through_the_date(sentence), (best.url,), passage_of[sentence].text)
+    worth_keeping = [s for s in passage_of if overlap[s] >= best_overlap * LOWEST_SHARE_OF_BEST_SENTENCE_KEPT]
+    kept = set(sorted(worth_keeping, key=lambda s: overlap[s], reverse=True)[:SENTENCES_IN_AN_ANSWER])
+    answer = [s for s in passage_of if s in kept]
     quoted = dict.fromkeys(passage_of[s].text for s in answer)
     return Found(" ".join(answer), (best.url,), " ".join(quoted))
