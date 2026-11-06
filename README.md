@@ -25,6 +25,7 @@ submission/    the system
   phrasings.txt  question wording the LLM is shown, from the public eval
 tests/         unit tests, plus rewordings checked against the real snapshots
 eval/          public_eval.jsonl from the kit; the others written for this system
+tools/         scan_for_conflicts.py: asks models for contradictions, for a person to review
 harness/       the kit's scorer
 starter/       the kit's naive solution
 ```
