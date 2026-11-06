@@ -6,9 +6,11 @@ from dataclasses import dataclass
 from typing import Iterator, Optional
 from urllib.parse import urlparse
 
-RATE_SHEET_PATHS = {"/rates", "/business-rates"}
-PRODUCT_PAGE_PREFIXES = ("/personal/", "/business/")
-EXCLUDED_PAGE_PREFIXES = ("/business/resources",)
+from site_profile import SITE
+
+RATE_SHEET_PATHS = SITE.rate_sheet_paths
+PRODUCT_PAGE_PREFIXES = SITE.product_page_prefixes
+NOT_RATE_PAGE_PREFIXES = SITE.prefixes_that_are_not_rate_pages
 
 LONGEST_HEADING_CHARS = 70
 HEADING_LINES_KEPT = 2
@@ -43,7 +45,7 @@ WORD = re.compile(r"[a-z0-9]+(?:'[a-z]+)?")
 CANONICAL_WORDS = {"intro": "introductory", "hsa": "health", "cds": "cd"}
 
 FAMILY_PATTERNS = (
-    ("money_market", re.compile(r"money market|investor[’']?s choice|\bachieve\b", re.I)),
+    ("money_market", re.compile(rf"money market|{SITE.money_market_names_pattern}", re.I)),
     ("ira", re.compile(r"\bira\b|\biras\b|\broth\b|traditional:", re.I)),
     ("home_improvement", re.compile(r"home improvement", re.I)),
     ("home_equity", re.compile(r"home equity|heloc", re.I)),
@@ -54,7 +56,7 @@ FAMILY_PATTERNS = (
     ("card", re.compile(r"\bvisa\b|credit card", re.I)),
     ("certificate", re.compile(r"certificate|month fixed|\bterm \d+ month", re.I)),
     ("checking", re.compile(r"checking", re.I)),
-    ("savings", re.compile(r"saving|holiday club", re.I)),
+    ("savings", re.compile(rf"saving|{SITE.savings_names_in_tables_pattern}", re.I)),
 )
 
 
@@ -103,7 +105,7 @@ def page_path(url: str) -> str:
 def is_rate_page(path: str) -> bool:
     if path in RATE_SHEET_PATHS:
         return True
-    return path.startswith(PRODUCT_PAGE_PREFIXES) and not path.startswith(EXCLUDED_PAGE_PREFIXES)
+    return path.startswith(PRODUCT_PAGE_PREFIXES) and not path.startswith(NOT_RATE_PAGE_PREFIXES)
 
 
 def split_cells(line: str) -> list[str]:

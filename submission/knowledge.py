@@ -6,7 +6,8 @@ from typing import Optional
 
 from conflicts import branch_count_conflict, foundation_founding_conflict, rate_conflicts
 from contract import Answer, Conflict, Snapshot, Source
-from prose import EXCLUDED_PAGE_PREFIXES, Found, PassageIndex
+from fees import fee_for, fee_on_the_schedule
+from passages import PassageIndex
 from question import (
     BUSINESS_ASKED,
     RateQuestion,
@@ -20,10 +21,13 @@ from question import (
     parse_rate_question,
     search_may_answer,
 )
+from llm import NO_PASSAGE_ANSWERS, ChoosePassage, Reword
 from rate_facts import RateFact, classify_family, extract_rate_facts, extract_table_facts, page_path, stem
-from llm import ChoosePassage, Reword, NO_PASSAGE_ANSWERS
+from search import candidates_for_an_open_question, link_for, search
+from site_profile import SITE
+from text_basics import Found
 
-REFUSAL_TEXT = "I can't confirm that from the website. Please contact Dupaco."
+REFUSAL_TEXT = f"I can't confirm that from the website. Please contact {SITE.name}."
 JUMBO = stem("jumbo")
 CASH = stem("cash")
 FAMILY_OF_CASH_OUT_ROWS = "home_equity"
@@ -52,7 +56,7 @@ class KnowledgeSystem:
         facts_on_every_page: list[RateFact] = []
         for page in snapshot.pages:
             facts.extend(extract_rate_facts(page.url, page.markdown))
-            if not page_path(page.url).startswith(EXCLUDED_PAGE_PREFIXES):
+            if not page_path(page.url).startswith(SITE.prefixes_not_searched):
                 facts_on_every_page.extend(extract_table_facts(page.url, page.markdown))
         passages = PassageIndex(snapshot.pages, snapshot.taken_on)
         self._snapshots.append(
@@ -80,10 +84,7 @@ class KnowledgeSystem:
             return refusal()
         if asks_what_changed(question):
             return self._answer_about_what_changed(parsed, selected, snapshot)
-        return Answer(
-            text=render_answer(parsed, selected),
-            sources=cite(selected, snapshot),
-        )
+        return Answer(text=render_answer(parsed, selected), sources=cite(selected, snapshot))
 
     def conflicts(self) -> list[Conflict]:
         if not self._snapshots:
@@ -126,8 +127,8 @@ def refusal() -> Answer:
 
 
 def _found_by_choosing_a_passage(question: str, passages: PassageIndex, choose_passage: Optional[ChoosePassage]) -> Optional[Found]:
-    found_by_rules = passages.search(question)
-    candidates = passages.candidates_for_an_open_question(question) if choose_passage else []
+    found_by_rules = search(passages, question)
+    candidates = candidates_for_an_open_question(passages, question) if choose_passage else []
     if not candidates:
         return found_by_rules
     rules_option = [f"The best keyword match ({', '.join(found_by_rules.urls)})\n{found_by_rules.text}"] if found_by_rules else []
@@ -143,11 +144,11 @@ def _found_by_choosing_a_passage(question: str, passages: PassageIndex, choose_p
 
 
 def _answer_from_search(question: str, snapshot: IndexedSnapshot, choose_passage: Optional[ChoosePassage] = None) -> Answer:
-    fee_on_the_schedule = snapshot.passages.fee_on_the_schedule(question) if asks_a_price(question) else None
+    fee_stated = fee_on_the_schedule(snapshot.passages, question) if asks_a_price(question) else None
     if asks_about_a_fee(question):
-        found = snapshot.passages.fee_for(question)
-    elif fee_on_the_schedule:
-        found = fee_on_the_schedule
+        found = fee_for(snapshot.passages, question)
+    elif fee_stated:
+        found = fee_stated
     elif not search_may_answer(question):
         return refusal()
     elif asks_for_a_link(question):
@@ -156,7 +157,7 @@ def _answer_from_search(question: str, snapshot: IndexedSnapshot, choose_passage
         found = _found_by_choosing_a_passage(question, snapshot.passages, choose_passage)
     if found is None:
         return refusal()
-    sources =[Source(url=url, snapshot_id=snapshot.snapshot_id, quote=found.quote) for url in found.urls]
+    sources = [Source(url=url, snapshot_id=snapshot.snapshot_id, quote=found.quote) for url in found.urls]
     return Answer(text=found.text, sources=sources, conflict_note=found.conflict_note)
 
 
@@ -169,7 +170,7 @@ def _link_answer(question: str, snapshot: IndexedSnapshot) -> Optional[Found]:
         if f.family == family and not f.from_rate_sheet and f.business == business
     )
     if not product_pages:
-        return snapshot.passages.link_for(question)
+        return link_for(snapshot.passages, question)
     def named_for_the_family(url: str) -> bool:
         return classify_family(page_path(url).replace("-", " ").replace("/", " ")) == family
 

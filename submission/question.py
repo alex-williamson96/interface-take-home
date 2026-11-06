@@ -5,6 +5,7 @@ from dataclasses import dataclass
 from typing import Optional
 
 from rate_facts import parse_term_months, stem, TERM, WORD
+from site_profile import SITE, SITE_NAME_IN_LOWERCASE
 
 RATE_INTENT = re.compile(
     r"\b(rates?|apys?|aprs?|interest|dividends?|yields?|earns?|earning|pays?|paying|charges?|percent|would i get)\b"
@@ -97,7 +98,7 @@ EVERYDAY_WORDING = tuple(
         (r"\bbranch locations\b", "branches"),
         (r"\bhow many (?:physical |total )?(?:locations|places|offices)\b", "how many branches"),
         (r"\b(?!branch\b)(\w[\w-]*) (?:location|office)\b", r"\1 branch"),
-        (r"\b(?:awards?|honors?|accolades?|rankings?|shoutouts?)\b(?=.*\bforbes\b)", "recognition"),
+        (rf"\b(?:awards?|honors?|accolades?|rankings?|shoutouts?)\b(?=.*\b{SITE.outlet_that_ranks_it}\b)", "recognition"),
         (r"\b(?:sign up|enroll)\b|(?<!\bcan )\bbecome a member\b", "join"),
         (r"\bcontact (?:info|details)\b", "contact information"),
         (r"\bphone number and address\b", "contact information"),
@@ -129,18 +130,18 @@ FAMILY_SYNONYMS = (
     ("personal_loan", re.compile(r"personal loans?", re.I)),
     ("card", re.compile(r"\bvisa\b|credit cards?|business cards?|balance transfers?|\bplatinum\b|\brewards card\b", re.I)),
     ("certificate", re.compile(r"\bcds?\b|certificates?|\b\d+[\s-]*months?\s+(?:fixed\s+)?(?:jumbo\s+)?special\b", re.I)),
-    ("money_market", re.compile(r"money market|investor[’']?s choice|\bachieve\b", re.I)),
+    ("money_market", re.compile(rf"money market|{SITE.money_market_names_pattern}", re.I)),
     ("checking", re.compile(r"checking", re.I)),
-    ("savings", re.compile(r"saving|holiday club|launchpad|you[- ]name[- ]it|high[- ]yield|\bbright\b|\bhsas?\b", re.I)),
+    ("savings", re.compile(rf"saving|{SITE.savings_names_in_questions_pattern}", re.I)),
     ("mortgage", REFINANCE_SYNONYM),
 )
 
 WORDS_THAT_DO_NOT_NARROW = frozenset(
     stem(word)
-    for word in """
+    for word in f"""
     a about account all also an and any are as at available balance be because been best between borrow borrowing
     both business but buy buying by can car card cd certificate charge checking cheapest come could credit current
-    currently did dollar do does dupaco each every finance financing find fixed for from get getting give go going
+    currently did dollar do does {SITE_NAME_IN_LOWERCASE} each every finance financing find fixed for from get getting give go going
     good got had has have hello help here hi highest home house how i i'd i'll i'm i've if in interest interested
     into is it just know lately latest least like list loan looking lowest make many may me might mo model money
     month more mortgage most much must my need new not of offer on only open opening or our out over per percent

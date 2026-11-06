@@ -9,10 +9,17 @@ Answers members' questions from dated downloads of a credit union's website: the
 ```
 submission/    the system
   knowledge.py   ingest, answer, conflicts, and choosing rate rows
-  question.py    what a question is asking for
+  question.py    what a question is asking for, in rate and fee terms
   rate_facts.py  reading rate tables
-  prose.py       searching page text; dates, counts, fees
   conflicts.py   contradictions in the latest snapshot
+  search.py      the registry of question kinds, and searching page text
+  kind_*.py      one kind of question each: hours, dates, counts, contact details, open-ended
+  asked.py       what every kind shares: the QuestionKind type and what a question asks for
+  page_answers.py  choosing sentences from a page
+  passages.py    the passage index built from each snapshot
+  fees.py        the fee schedule
+  text_basics.py words, search terms, Passage and Found
+  site_profile.py everything specific to this credit union
   llm.py         optional steps: reword a question, judge answers to open-ended ones
   phrasings.txt  question wording the LLM is shown, from the public eval
 tests/         unit tests, plus rewordings checked against the real snapshots

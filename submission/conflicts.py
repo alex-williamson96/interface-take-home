@@ -5,12 +5,16 @@ from collections import Counter, defaultdict
 from typing import Optional
 
 from contract import Conflict, Source
-from prose import PassageIndex, words_in
+from kind_count import branch_count_statements
+from kind_date import founding_year_statements
+from passages import PassageIndex
 from rate_facts import RateFact, is_rate_page, page_path, stem, words_of
+from site_profile import SITE
+from text_basics import words_in
 
 NUMBER = re.compile(r"\d+(?:\.\d+)?")
 VALUE_NAMES = {"apy": "APY", "apr": "APR", "rate": "rate", "dividend": "dividend", "promo_apy": "promotional APY"}
-FOUNDATION_NAME = set(words_in("foundation"))
+FOUNDATION_NAME = set(words_in(SITE.foundation_word))
 FAMILIES_ASKED_ABOUT_ONE_TERM_AT_A_TIME = frozenset({"auto"})
 WORDS_EVERY_PRODUCT_IN_A_FAMILY_SHARES = frozenset(stem(word) for word in "money market checking savings account".split())
 
@@ -33,7 +37,7 @@ def rate_conflicts(facts: tuple[RateFact, ...], snapshot_id: str) -> list[Confli
 
 
 def branch_count_conflict(passages: PassageIndex, snapshot_id: str) -> Optional[Conflict]:
-    newest, others = passages.branch_count_statements()
+    newest, others = branch_count_statements(passages)
     if newest is None or all(count == newest[0] for count, _ in others):
         return None
     one_statement_per_count = {count: passage for count, passage in reversed(others)}
@@ -48,14 +52,14 @@ def branch_count_conflict(passages: PassageIndex, snapshot_id: str) -> Optional[
 
 
 def foundation_founding_conflict(passages: PassageIndex, snapshot_id: str) -> Optional[Conflict]:
-    statements = passages.founding_year_statements(FOUNDATION_NAME)
+    statements = founding_year_statements(passages, FOUNDATION_NAME)
     statements_per_year = Counter(year for year, _ in statements)
     if len(statements_per_year) < 2:
         return None
     most_stated = statements_per_year.most_common(1)[0][0]
     one_statement_per_year = {year: passage for year, passage in statements}
     return Conflict(
-        topic="year the Dupaco Foundation was founded",
+        topic=f"year {SITE.foundation_name} was founded",
         values=list(statements_per_year),
         sources=[Source(url=p.url, snapshot_id=snapshot_id, quote=p.text) for p in one_statement_per_year.values()],
         resolution=most_stated,
