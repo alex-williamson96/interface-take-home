@@ -11,17 +11,29 @@ Rules on the Python standard library answer rates, fees, dates, counts, addresse
 
 Rate and fee answers do not use the judging step, so every value still comes from the snapshots.
 
-| Questions | Measure | Rules only | With the LLM, 2 runs |
+| Questions | Measure | Rules only | With the LLM, 3 runs |
 |---|---|---|---|
 | `eval/public_eval.jsonl` | Accuracy | 0.941 | 0.941 |
 | | Final score | 0.941 | 0.928 to 0.934 |
-| `eval/blind_rewordings.jsonl` | Accuracy | 0.760 | 0.973 |
+| `eval/blind_rewordings.jsonl` | Accuracy | 0.760 | 0.962 to 0.973 |
 | | Paraphrase consistency | 0.732 | 1.0 |
-| | Final score | 0.742 | 0.964 to 0.968 |
+| | Final score | 0.742 | 0.955 to 0.968 |
 | `eval/dev_rewordings.jsonl` | Accuracy | 0.697 | 0.971 |
 | `eval/topic_questions.jsonl` | Accuracy | 0.406 | 0.580 to 0.587 |
 
-Final scores leave out conflicts. No run gave a stale value. p95 latency is about 2.5 to 3.4 seconds on these sets, and about 6 on the topic questions, where refusals make more calls, against 0.01 to 0.02 for rules alone.
+Final scores leave out conflicts. No run gave a stale value. p95 latency is about 2.5 to 3.4 seconds on these sets, and about 6 on the topic questions, where refusals make more calls, against 0.01 to 0.02 for rules alone. Snapshots load in about 5 seconds.
+
+Logging from `knowledge` and `llm` records what the model decided and every failed call. Member questions appear only at debug level.
+
+## What the evals decided
+
+- **Measured the claim first.** The public eval said 0.94, but it had been tuned against. A blind set in members' own words scored 0.72 with rules alone, which is why the LLM was added at all.
+- **Chose the model by score.** Blind accuracy was 0.91 on Opus 5.5, 0.95 on Sonnet 5.5 and 0.93 on Haiku 5.5, with Haiku also losing public points. Sonnet costs half what Opus does.
+- **Took away the model's power to replace answers.** Letting it swap a rule answer for its own excerpt helped new topics but dropped public accuracy to 0.84 to 0.89, so it can now only reject one.
+- **Removed a structured classifier that missed its bar.** Replacing the rewording with structured fields scored 0.94 to 0.96 on the blind set, or 0.95 for rates only, and was slower. It also could not remove any regexes, since the rules still need them without a key.
+- **Pinned behaviour before refactoring.** Moving site details into `site_profile.py` and search into question kinds changed none of the 675 pinned answers.
+
+Rates and fees stay in rules on purpose: one stale number zeroes a question, and tiers such as 60-month and 84-month are near-identical text that needs exact matching. The rules are tuned to this site, and no RAG or knowledge graph version was built to compare.
 
 ## What "current" means
 
@@ -48,6 +60,6 @@ Rates and fees stated in page text are not compared.
 - General how-to and "what do you offer" questions can return loosely related text.
 - A count can come from a sentence about the total when the question narrows it, such as `How many Dubuque branches does Dupaco have?`.
 - `eval/own_rewordings.jsonl` was written to find misses and then used to fix them, so its score is not a blind measure.
-- `eval/blind_rewordings.jsonl` was written before seeing any answers and only its aggregate scores were read. The model and the design of the LLM steps were chosen partly by that score, so it is flattered.
+- `eval/blind_rewordings.jsonl` was written before seeing any answers and only its aggregate scores were read. The model and the design of the LLM steps were chosen partly by that score, and it was checked many times, so it is flattered and is now a development score. It moves by about one question between runs.
 - `eval/dev_rewordings.jsonl` rewords the public questions, the same wording the model is shown, so it says little about new topics. `eval/topic_questions.jsonl` covers those: an LLM wrote it from 69 pages of the latest snapshot, half answerable, half asking what the page does not state. Answers must contain one exact phrase, so its scores understate correct answers worded differently.
 - Answerable questions on topics outside the practice set are still mostly missed, at about 0.36.
