@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from collections import Counter
 from dataclasses import dataclass
 from typing import Optional
@@ -27,6 +28,7 @@ from search import candidates_for_an_open_question, link_for, search
 from site_profile import SITE
 from text_basics import Found
 
+LOG = logging.getLogger(__name__)
 REFUSAL_TEXT = f"I can't confirm that from the website. Please contact {SITE.name}."
 JUMBO = stem("jumbo")
 CASH = stem("cash")
@@ -66,6 +68,7 @@ class KnowledgeSystem:
     def answer(self, question: str, as_of: Optional[str] = None) -> Answer:
         reworded = self._reword(question) if self._reword else question
         if reworded != question:
+            LOG.debug("reworded %r as %r", question, reworded)
             answer = self._answer_from_rules(reworded, as_of)
             if answer.confident:
                 return answer
@@ -134,12 +137,16 @@ def _found_by_choosing_a_passage(question: str, passages: PassageIndex, choose_p
     rules_option = [f"The best keyword match ({', '.join(found_by_rules.urls)})\n{found_by_rules.text}"] if found_by_rules else []
     choice = choose_passage(question, rules_option + [candidate.described for candidate in candidates])
     if choice is None:
+        LOG.warning("no model judgment was available, so the rules' answer stands")
         return found_by_rules
     if choice == NO_PASSAGE_ANSWERS:
+        LOG.info("model rejected %s", "the rules' answer" if found_by_rules else "every passage")
         return None
     if found_by_rules:
+        LOG.info("model kept the rules' answer from %s", found_by_rules.urls)
         return found_by_rules
     chosen = candidates[choice.position]
+    LOG.info("rules found nothing, so the model chose an excerpt from %s", chosen.url)
     return Found(choice.excerpt, (chosen.url,), chosen.text)
 
 

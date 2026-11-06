@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import os
 from pathlib import Path
 from typing import Callable, NamedTuple, Optional, Sequence
@@ -18,6 +19,7 @@ class Choice(NamedTuple):
 NO_PASSAGE_ANSWERS = Choice(-1, "")
 ChoosePassage = Callable[[str, Sequence[str]], Optional[Choice]]
 
+LOG = logging.getLogger(__name__)
 MODEL = "claude-sonnet-5-5"
 REFUSAL_FALLBACK_BETA = "server-side-fallback-2026-07-01"
 MAX_TOKENS = 1024
@@ -86,7 +88,8 @@ def steps_from_environment() -> tuple[Optional[Reword], Optional[ChoosePassage]]
         if key not in rewordings:
             try:
                 rewordings[key] = _reworded(client, rewording_system, untrusted_question)
-            except anthropic.APIError:
+            except anthropic.APIError as error:
+                LOG.warning("rewording failed, so the question is used as asked: %s", type(error).__name__)
                 return untrusted_question
         return rewordings[key]
 
@@ -95,7 +98,8 @@ def steps_from_environment() -> tuple[Optional[Reword], Optional[ChoosePassage]]
         if key not in choices:
             try:
                 choices[key] = _chosen(client, untrusted_question, passages)
-            except anthropic.APIError:
+            except anthropic.APIError as error:
+                LOG.warning("choosing a passage failed: %s", type(error).__name__)
                 return None
         return choices[key]
 
@@ -117,6 +121,7 @@ def _ask_for_json(client, system: str, output_format: dict, untrusted_content: s
         messages=[{"role": "user", "content": untrusted_content}],
     )
     if response.stop_reason != "end_turn":
+        LOG.warning("model stopped early: %s", response.stop_reason)
         return None
     return json.loads(next(block.text for block in response.content if block.type == "text"))
 
@@ -134,6 +139,8 @@ def _chosen(client, untrusted_question: str, passages: Sequence[str]) -> Choice:
         return NO_PASSAGE_ANSWERS
     position = reply["passage"] - 1
     excerpt = " ".join(reply["excerpt"].split())
+    if excerpt and excerpt not in " ".join(passages[position].split()):
+        LOG.warning("model's excerpt is not word for word in passage %d, so it was dropped", reply["passage"])
     if not excerpt or excerpt not in " ".join(passages[position].split()):
         return NO_PASSAGE_ANSWERS
     return Choice(position, excerpt)

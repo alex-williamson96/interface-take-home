@@ -572,7 +572,13 @@ class ChoosingAPassage(unittest.TestCase):
             content=[SimpleNamespace(type="text", text='{"passage": 1, "excerpt": "Shine pays 9.99% APY."}')],
         )
         client = SimpleNamespace(beta=SimpleNamespace(messages=SimpleNamespace(create=lambda **request: reply)))
-        self.assertEqual(_chosen(client, self.QUESTION, [self.STATED]), NO_PASSAGE_ANSWERS)
+        with self.assertLogs("llm", "WARNING"):
+            self.assertEqual(_chosen(client, self.QUESTION, [self.STATED]), NO_PASSAGE_ANSWERS)
+
+    def test_a_rejected_answer_is_logged_without_the_members_question(self):
+        with self.assertLogs("knowledge", "INFO") as logged:
+            self.system_choosing(lambda question, passages: NO_PASSAGE_ANSWERS).answer(self.QUESTION)
+        self.assertNotIn(self.QUESTION, " ".join(logged.output))
 
 
 class Conflicts(unittest.TestCase):
