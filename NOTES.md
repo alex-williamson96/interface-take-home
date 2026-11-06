@@ -52,8 +52,13 @@ Rates and fees stay in rules on purpose: one stale number zeroes a question, and
 - Table rows on any page are compared with the rate pages by product, term, balance tier and overlapping model years, and only the same kind of value, so tiers and rate vs APY never look like conflicts. The rate page wins. Auto loans get one entry per term; mortgages get one entry per page.
 - Branch counts: the newest dated statement wins over older and undated pages.
 - The Foundation's founding year: the year most statements give wins.
+- Five more come from `submission/reviewed_conflicts.json`, each listed only while every wording it names is still in the latest snapshot. It stores short wordings, and quotes are read from the snapshot.
 
-Rates and fees stated in page text are not compared.
+Rates and fees stated in page text are not compared, apart from any in that file.
+
+That file is specific to this site and was not found by rules. A one-off scan, not in this repository, had Haiku 5.5 extract 2,018 claims from 530 pages of the latest snapshot and then look for contradictions. Two runs gave 10 and 12 candidates, and a person checked them against the pages: five were real and new, one was already listed, and the rest were false, such as a press dateline read as a headquarters and a discount that changed between years. A second check by Sonnet 5.5 still let false ones through and changed between runs, so the scan does not run at scoring: `conflicts()` needs no key and gives the same list every time. Picking the winners was a judgment call. The site cannot settle the Mini Max age, and the Voices Building's newest statement is the one outnumbered.
+
+`eval/own_conflicts_gold.json` is a hand-labelled list of 14 and only tests our own judgment, since we wrote both sides. New contradictions on later snapshots would need another scan and review.
 
 ## Known limits
 

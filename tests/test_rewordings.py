@@ -1,3 +1,4 @@
+import json
 import sys
 import unittest
 from pathlib import Path
@@ -5,6 +6,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path[:0] = [str(ROOT / "harness"), str(ROOT / "submission")]
 
+from conflicts import REVIEWED_CONFLICTS  # noqa: E402
 from knowledge import KnowledgeSystem  # noqa: E402
 from run_eval import load_snapshots  # noqa: E402
 
@@ -165,7 +167,7 @@ QUESTIONS_NAMING_NO_BRANCH_THAT_MUST_NOT_BE_TOLD_ONE_CLOSED = (
     "Are your branches still open?",
 )
 
-FEWEST_CONFLICTS_WORTH_REVIEWING_BY_HAND = 10
+FEWEST_CONFLICTS_WORTH_REVIEWING_BY_HAND = 14
 
 UNLISTED_PRODUCTS = (
     "What is the rate on a 5/1 ARM?",
@@ -338,6 +340,13 @@ class RewordingsAgainstRealSnapshots(unittest.TestCase):
         self.assertEqual(conflict_naming("2011", "2012").resolution, "2011")
         self.assertNotIn("243597822", " ".join(value for c in found for value in c.values))
         self.assertLessEqual(len(found), FEWEST_CONFLICTS_WORTH_REVIEWING_BY_HAND)
+
+    def test_every_reviewed_conflict_is_live_in_the_latest_snapshot_and_resolves_to_one_of_its_values(self):
+        by_topic = {conflict.topic: conflict for conflict in self.system.conflicts()}
+        for entry in json.loads(REVIEWED_CONFLICTS.read_text(encoding="utf-8")):
+            with self.subTest(entry["topic"]):
+                conflict = by_topic[entry["topic"]]
+                self.assertIn(conflict.resolution, conflict.values)
 
     def test_a_product_or_fact_the_site_does_not_list_is_refused(self):
         for question in (

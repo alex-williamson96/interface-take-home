@@ -1,4 +1,5 @@
 import importlib.util
+import json
 import os
 import subprocess
 import sys
@@ -10,6 +11,7 @@ from types import SimpleNamespace
 ROOT = Path(__file__).resolve().parent.parent
 sys.path[:0] = [str(ROOT / "harness"), str(ROOT / "submission")]
 
+from conflicts import REVIEWED_CONFLICTS  # noqa: E402
 from contract import Page, Snapshot  # noqa: E402
 from knowledge import KnowledgeSystem  # noqa: E402
 from llm import NO_PASSAGE_ANSWERS, Choice, _chosen  # noqa: E402
@@ -612,6 +614,13 @@ class Conflicts(unittest.TestCase):
         sheet = self.rows("| Mortgage 15-Year Fixed | 6.75% | 6.88% |", "| Mortgage 30-Year Fixed | 7.25% | 7.29% |")
         landing = self.rows("| Mortgage 15-Year Fixed | 5.50% | 5.62% |", "| Mortgage 30-Year Fixed | 6.00% | 6.04% |")
         self.assertEqual(len(self.conflicts_between(sheet, landing)), 1)
+
+    def test_a_reviewed_conflict_is_listed_only_while_every_statement_is_still_on_the_site(self):
+        entry = json.loads(REVIEWED_CONFLICTS.read_text(encoding="utf-8"))[0]
+        first, second = (statement["stated_as"] for statement in entry["statements"])
+        topics = lambda *pages: [conflict.topic for conflict in system_with_pages(*pages).conflicts()]
+        self.assertIn(entry["topic"], topics((CONTACT_URL, f"Call {first}."), (NEWS_URL + "a", f"Call {second}.")))
+        self.assertNotIn(entry["topic"], topics((CONTACT_URL, f"Call {first}.")))
 
     def test_tiers_and_the_same_number_written_differently_are_not_conflicts(self):
         sheet = self.rows("| Mortgage 15-Year Fixed | 6.75% | 6.88% |", "| Mortgage 30-Year Fixed | 7.25% | 7.29% |")

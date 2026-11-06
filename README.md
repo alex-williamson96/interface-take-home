@@ -12,6 +12,7 @@ submission/    the system
   question.py    what a question is asking for, in rate and fee terms
   rate_facts.py  reading rate tables
   conflicts.py   contradictions in the latest snapshot
+  reviewed_conflicts.json  contradictions a model found and a person checked
   search.py      the registry of question kinds, and searching page text
   kind_*.py      one kind of question each: hours, dates, counts, contact details, open-ended
   asked.py       what every kind shares: the QuestionKind type and what a question asks for

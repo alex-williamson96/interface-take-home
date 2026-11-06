@@ -1,18 +1,22 @@
 from __future__ import annotations
 
+import json
 import re
 from collections import Counter, defaultdict
+from pathlib import Path
 from typing import Optional
 
 from contract import Conflict, Source
 from kind_count import branch_count_statements
 from kind_date import founding_year_statements
+from page_answers import SENTENCE_END
 from passages import PassageIndex
 from rate_facts import RateFact, is_rate_page, page_path, stem, words_of
 from site_profile import SITE
 from text_basics import words_in
 
 NUMBER = re.compile(r"\d+(?:\.\d+)?")
+REVIEWED_CONFLICTS = Path(__file__).with_name(SITE.reviewed_conflicts_file)
 VALUE_NAMES = {"apy": "APY", "apr": "APR", "rate": "rate", "dividend": "dividend", "promo_apy": "promotional APY"}
 FOUNDATION_NAME = set(words_in(SITE.foundation_word))
 FAMILIES_ASKED_ABOUT_ONE_TERM_AT_A_TIME = frozenset({"auto"})
@@ -65,6 +69,37 @@ def foundation_founding_conflict(passages: PassageIndex, snapshot_id: str) -> Op
         resolution=most_stated,
         reason=f"{statements_per_year[most_stated]} of {len(statements)} statements give {most_stated}.",
     )
+
+
+def reviewed_conflicts(passages: PassageIndex, snapshot_id: str) -> list[Conflict]:
+    reviewed = json.loads(REVIEWED_CONFLICTS.read_text(encoding="utf-8"))
+    still_live = (_reviewed_conflict(entry, passages, snapshot_id) for entry in reviewed)
+    return [conflict for conflict in still_live if conflict]
+
+
+def _reviewed_conflict(entry: dict, passages: PassageIndex, snapshot_id: str) -> Optional[Conflict]:
+    sources = []
+    for statement in entry["statements"]:
+        source = _source_stating(statement["stated_as"], passages, snapshot_id)
+        if source is None:
+            return None
+        sources.append(source)
+    return Conflict(
+        topic=entry["topic"],
+        values=[statement["value"] for statement in entry["statements"]],
+        sources=sources,
+        resolution=entry["resolution"],
+        reason=entry["reason"],
+    )
+
+
+def _source_stating(wording: str, passages: PassageIndex, snapshot_id: str) -> Optional[Source]:
+    stating = [passage for passage in passages.passages if wording in passage.text]
+    if not stating:
+        return None
+    best = min(stating, key=lambda passage: (-passage.trust, passage.url))
+    quote = next(sentence for sentence in SENTENCE_END.split(best.text) if wording in sentence)
+    return Source(url=best.url, snapshot_id=snapshot_id, quote=quote)
 
 
 def _row_restated(fact: RateFact, rate_page_rows: list[RateFact]) -> Optional[RateFact]:

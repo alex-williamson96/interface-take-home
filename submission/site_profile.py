@@ -12,6 +12,7 @@ class SiteProfile:
     founding_statement: str
     states_served: tuple[str, ...]
     outlet_that_ranks_it: str
+    reviewed_conflicts_file: str
 
     rate_sheet_paths: frozenset[str]
     product_page_prefixes: tuple[str, ...]
@@ -42,6 +43,7 @@ DUPACO = SiteProfile(
     founding_statement="founded in 1948",
     states_served=("Iowa", "Illinois", "Wisconsin"),
     outlet_that_ranks_it="forbes",
+    reviewed_conflicts_file="reviewed_conflicts.json",
     rate_sheet_paths=frozenset({"/rates", "/business-rates"}),
     product_page_prefixes=("/personal/", "/business/"),
     prefixes_that_are_not_rate_pages=("/business/resources",),

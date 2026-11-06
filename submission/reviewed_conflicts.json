@@ -1,0 +1,47 @@
+[
+  {
+    "topic": "Dupaco Mortgage Team phone number",
+    "statements": [
+      {"value": "800-373-7600 ext. 204", "stated_as": "1.800.373.7600 ext. 204"},
+      {"value": "800-383-1700 ext. 204", "stated_as": "1.800.383.1700 ext. 204"}
+    ],
+    "resolution": "800-373-7600 ext. 204",
+    "reason": "800-373-7600 is Dupaco's main number, and its recent news releases give it with the same extension."
+  },
+  {
+    "topic": "start of the 2027 Dupaco Foundation scholarship application period",
+    "statements": [
+      {"value": "Jan. 5, 2027", "stated_as": "Application period begins Jan. 5, 2027"},
+      {"value": "Jan. 6, 2027", "stated_as": "Application period: Jan. 6-Feb. 24, 2027"}
+    ],
+    "resolution": "Jan. 5, 2027",
+    "reason": "/scholarships is the page dedicated to the scholarship; /community only mentions it."
+  },
+  {
+    "topic": "Mini Max loan vehicle age limit",
+    "statements": [
+      {"value": "5 calendar years", "stated_as": "up to 5 calendar years old"},
+      {"value": "6 calendar years", "stated_as": "up to 6 calendar years old"}
+    ],
+    "resolution": "5 calendar years",
+    "reason": "The site does not settle this: both are on the same page. The stricter limit is the safer one to quote until Dupaco confirms."
+  },
+  {
+    "topic": "size of the Dupaco Voices Building in square feet",
+    "statements": [
+      {"value": "174,670", "stated_as": "174,670"},
+      {"value": "171,432", "stated_as": "171,432"}
+    ],
+    "resolution": "174,670",
+    "reason": "Three pages give 174,670 and one gives 171,432, though that one is the newest, by three weeks."
+  },
+  {
+    "topic": "phone extension to enroll in Family ID Restoration",
+    "statements": [
+      {"value": "ext. 206", "stated_as": "To enroll, call Dupaco at 800-373-7600, ext. 206"},
+      {"value": "ext. 0", "stated_as": "To enroll in this service, contact Dupaco at service@dupaco.com or call 800-373-7600, ext. 0"}
+    ],
+    "resolution": "ext. 206",
+    "reason": "/personal/insurance is the current product page; the other is a 2021 blog post."
+  }
+]

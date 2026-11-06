@@ -5,7 +5,7 @@ from collections import Counter
 from dataclasses import dataclass
 from typing import Optional
 
-from conflicts import branch_count_conflict, foundation_founding_conflict, rate_conflicts
+from conflicts import branch_count_conflict, foundation_founding_conflict, rate_conflicts, reviewed_conflicts
 from contract import Answer, Conflict, Snapshot, Source
 from fees import fee_for, fee_on_the_schedule
 from passages import PassageIndex
@@ -98,7 +98,8 @@ class KnowledgeSystem:
             branch_count_conflict(latest.passages, latest.snapshot_id),
             foundation_founding_conflict(latest.passages, latest.snapshot_id),
         )
-        return found + [conflict for conflict in statements_that_disagree if conflict]
+        reviewed = reviewed_conflicts(latest.passages, latest.snapshot_id)
+        return found + [conflict for conflict in statements_that_disagree if conflict] + reviewed
 
     def _answer_about_what_changed(self, question: RateQuestion, selected: list[RateFact], snapshot: IndexedSnapshot) -> Answer:
         current = {_same_tier_over_time(fact): fact for fact in selected}
